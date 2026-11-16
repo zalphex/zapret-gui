@@ -1,4 +1,4 @@
-﻿$script:AppVersion = '1.3.6'
+﻿$script:AppVersion = '1.3.7'
 $script:SettingsKey = 'HKCU:\Software\zapretgui'
 $script:AutoTaskName = 'zapret-GUI-' + $identity.User.Value
 $script:DesktopDir = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'zapretgui\Desktop'
@@ -69,9 +69,6 @@ using System.Runtime.InteropServices;
 
 public static class ZapretWindowAppearance
 {
-    [DllImport("shell32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
-    public static extern int SetCurrentProcessExplicitAppUserModelID(string appId);
-
     [DllImport("dwmapi.dll")]
     private static extern int DwmSetWindowAttribute(IntPtr window, int attribute, ref int value, int size);
 
@@ -89,10 +86,12 @@ public static class ZapretWindowAppearance
     }
 }
 '@
-    [void][ZapretWindowAppearance]::SetCurrentProcessExplicitAppUserModelID('Zapret.GUI')
+    Add-Type -Path (Join-Path $script:AppRoot 'TaskbarIdentity.cs')
+    [ZapretTaskbarIdentity]::SetProcess()
     $script:Window.Add_SourceInitialized({
         $handle = [Windows.Interop.WindowInteropHelper]::new($script:Window).Handle
         [ZapretWindowAppearance]::Apply($handle)
+        [ZapretTaskbarIdentity]::SetWindow($handle)
     })
 }
 

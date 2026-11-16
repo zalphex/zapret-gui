@@ -4,10 +4,10 @@ Name "zapretgui"
 OutFile "../zapret_GUI_Setup_x64.exe"
 InstallDir "$PROGRAMFILES64\zapretgui\Desktop"
 SetCompressor /SOLID lzma
-VIProductVersion "1.3.6.0"
+VIProductVersion "1.3.7.0"
 VIAddVersionKey /LANG=1049 "ProductName" "zapretgui"
 VIAddVersionKey /LANG=1049 "FileDescription" "Установщик zapretgui"
-VIAddVersionKey /LANG=1049 "FileVersion" "1.3.6"
+VIAddVersionKey /LANG=1049 "FileVersion" "1.3.7"
 
 !include "MUI2.nsh"
 !include "x64.nsh"
@@ -57,6 +57,7 @@ FunctionEnd
   File "zapretgui.exe"
   File "FlowPanel.ps1"
   File "Settings.ps1"
+  File "TaskbarIdentity.cs"
   File "AppUpdate.ps1"
   File "Engine.ps1"
   File "Panel.xaml"
@@ -74,6 +75,7 @@ Section "zapretgui"
   File "Uninstall.ps1"
   WriteUninstaller "$PROGRAMFILES64\zapretgui\Desktop\Uninstall.exe"
   File "Migrate.ps1"
+  File "RegisterShortcut.ps1"
   !insertmacro DisableX64FSRedirection
   ExecWait '"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "$PROGRAMFILES64\zapretgui\Desktop\Migrate.ps1"' $0
   !insertmacro EnableX64FSRedirection
@@ -90,9 +92,15 @@ Section "zapretgui"
   Delete "$SMPROGRAMS\zapret GUI\zapret GUI.lnk"
   RMDir "$SMPROGRAMS\zapret GUI"
   CreateDirectory "$SMPROGRAMS\zapretgui"
-  CreateShortcut "$SMPROGRAMS\zapretgui\zapretgui.lnk" "$INSTDIR\zapretgui.exe"
+  CreateShortcut "$SMPROGRAMS\zapretgui\zapretgui.lnk" "$INSTDIR\zapretgui.exe" "" "$INSTDIR\zapretgui.exe" 0
+  !insertmacro DisableX64FSRedirection
+  ExecWait '"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "$PROGRAMFILES64\zapretgui\Desktop\RegisterShortcut.ps1" -Shortcut "$SMPROGRAMS\zapretgui\zapretgui.lnk"' $0
+  !insertmacro EnableX64FSRedirection
+  ${If} $0 != 0
+    DetailPrint "Не удалось задать имя приложения для панели задач."
+  ${EndIf}
   WriteRegStr HKLM "${UNKEY}" "DisplayName" "zapretgui"
-  WriteRegStr HKLM "${UNKEY}" "DisplayVersion" "1.3.6"
+  WriteRegStr HKLM "${UNKEY}" "DisplayVersion" "1.3.7"
   WriteRegStr HKLM "${UNKEY}" "InstallLocation" "$INSTDIR"
   WriteRegStr HKLM "${UNKEY}" "DisplayIcon" "$INSTDIR\zapretgui.exe"
   WriteRegStr HKLM "${UNKEY}" "UninstallString" '$\"$PROGRAMFILES64\zapretgui\Desktop\Uninstall.exe$\"'
@@ -104,6 +112,7 @@ SectionEnd
   Delete "${Directory}\zapretgui.exe"
   Delete "${Directory}\FlowPanel.ps1"
   Delete "${Directory}\Settings.ps1"
+  Delete "${Directory}\TaskbarIdentity.cs"
   Delete "${Directory}\AppUpdate.ps1"
   Delete "${Directory}\Engine.ps1"
   Delete "${Directory}\Panel.xaml"
@@ -135,6 +144,7 @@ Section "Uninstall"
     !insertmacro RemoveAppFiles "$1"
   ${EndIf}
   Delete "$1\Migrate.ps1"
+  Delete "$1\RegisterShortcut.ps1"
   Delete "$1\Uninstall.ps1"
   Delete "$1\Uninstall.exe"
   RMDir "$1"
