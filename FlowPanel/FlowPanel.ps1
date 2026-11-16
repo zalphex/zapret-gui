@@ -380,6 +380,7 @@ try {
 } catch {
     [void][Windows.MessageBox]::Show($_.Exception.Message, 'zapretgui', 'OK', 'Error')
 } finally {
+    if ($script:ProxyTrayTimer) { $script:ProxyTrayTimer.Stop() }
     if ($script:TrayIcon) {
         $script:TrayIcon.Visible = $false
         $script:TrayIcon.Dispose()

@@ -4,10 +4,10 @@ Name "zapretgui"
 OutFile "../zapret_GUI_Setup_x64.exe"
 InstallDir "$PROGRAMFILES64\zapretgui\Desktop"
 SetCompressor /SOLID lzma
-VIProductVersion "1.3.7.0"
+VIProductVersion "1.3.8.0"
 VIAddVersionKey /LANG=1049 "ProductName" "zapretgui"
 VIAddVersionKey /LANG=1049 "FileDescription" "Установщик zapretgui"
-VIAddVersionKey /LANG=1049 "FileVersion" "1.3.7"
+VIAddVersionKey /LANG=1049 "FileVersion" "1.3.8"
 
 !include "MUI2.nsh"
 !include "x64.nsh"
@@ -100,7 +100,7 @@ Section "zapretgui"
     DetailPrint "Не удалось задать имя приложения для панели задач."
   ${EndIf}
   WriteRegStr HKLM "${UNKEY}" "DisplayName" "zapretgui"
-  WriteRegStr HKLM "${UNKEY}" "DisplayVersion" "1.3.7"
+  WriteRegStr HKLM "${UNKEY}" "DisplayVersion" "1.3.8"
   WriteRegStr HKLM "${UNKEY}" "InstallLocation" "$INSTDIR"
   WriteRegStr HKLM "${UNKEY}" "DisplayIcon" "$INSTDIR\zapretgui.exe"
   WriteRegStr HKLM "${UNKEY}" "UninstallString" '$\"$PROGRAMFILES64\zapretgui\Desktop\Uninstall.exe$\"'

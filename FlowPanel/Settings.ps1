@@ -1,4 +1,4 @@
-﻿$script:AppVersion = '1.3.7'
+﻿$script:AppVersion = '1.3.8'
 $script:SettingsKey = 'HKCU:\Software\zapretgui'
 $script:AutoTaskName = 'zapret-GUI-' + $identity.User.Value
 $script:DesktopDir = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'zapretgui\Desktop'
@@ -124,6 +124,12 @@ function Initialize-Settings {
     $script:TrayIcon.Icon = if ($script:TrayImage) { $script:TrayImage } else { [Drawing.SystemIcons]::Application }
     $script:TrayIcon.ContextMenuStrip = $script:TrayMenu
     $script:TrayIcon.Add_DoubleClick({ Show-PanelFromTray })
+    $script:ManagedProxyPath = Join-Path $env:ProgramFiles 'zapretgui\TG\TgWsProxy_windows.exe'
+    $script:ProxyTrayTimer = New-Object Windows.Threading.DispatcherTimer
+    $script:ProxyTrayTimer.Interval = [TimeSpan]::FromSeconds(2)
+    $script:ProxyTrayTimer.Add_Tick({ [ZapretProxyTray]::HideManagedProxy($script:ManagedProxyPath) })
+    $script:ProxyTrayTimer.Start()
+
 
     $pref = Get-ItemProperty -LiteralPath $script:SettingsKey -Name MinimizeToTray -ErrorAction SilentlyContinue
     if ($null -eq $pref) {
