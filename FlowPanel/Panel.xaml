@@ -478,7 +478,9 @@
             <Border Style="{StaticResource Card}" Margin="0,0,0,12">
               <StackPanel>
                 <CheckBox x:Name="AutoStart" Content="Автозапуск zapretgui" Foreground="#F5F5F5" FontSize="16" Padding="7,0,0,0"/>
-                <TextBlock Style="{StaticResource MutedText}" Margin="22,7,0,0" Text="Открывать панель при входе в Windows. Установленные zapret и TG WS Proxy запустятся вместе с ней."/>
+                <TextBlock Style="{StaticResource MutedText}" Margin="22,7,0,0" Text="При входе в Windows запустить zapretgui и установленные zapret и TG WS Proxy."/>
+                <CheckBox x:Name="StartInTray" Content="Запускать в фоне" Foreground="#F5F5F5" FontSize="16" Padding="7,0,0,0" Margin="0,14,0,0"/>
+                <TextBlock Style="{StaticResource MutedText}" Margin="22,7,0,0" Text="При включённом автозапуске показывать значок в трее. Окно можно открыть двойным щелчком по значку."/>
               </StackPanel>
             </Border>
             <Border Style="{StaticResource Card}">

@@ -1,4 +1,6 @@
-﻿$ErrorActionPreference = 'Stop'
+﻿param([switch]$WindowsStartup)
+
+$ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName PresentationFramework, PresentationCore, WindowsBase
 
 if (![Environment]::Is64BitOperatingSystem -or $env:PROCESSOR_ARCHITECTURE -ne 'AMD64') {
@@ -11,6 +13,7 @@ $principal = New-Object Security.Principal.WindowsPrincipal($identity)
 if (!$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)) {
     try {
         $arguments = '-NoLogo -NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $PSCommandPath + '"'
+        if ($WindowsStartup) { $arguments += ' -WindowsStartup' }
         $null = Start-Process -FilePath "$PSHOME\powershell.exe" -ArgumentList $arguments -Verb RunAs
     } catch {
         [void][Windows.MessageBox]::Show('Для запуска zapret нужны права администратора. Запусти zapretgui снова и подтверди запрос Windows.', 'zapretgui')
@@ -22,7 +25,7 @@ $script:Lock = New-Object System.Threading.Mutex($false, 'Local\FlowPanel.Flowse
 try { $hasLock = $script:Lock.WaitOne(0) }
 catch [Threading.AbandonedMutexException] { $hasLock = $true }
 if (!$hasLock) {
-    [void][Windows.MessageBox]::Show('zapretgui уже открыт.', 'zapretgui')
+    if (!$WindowsStartup) { [void][Windows.MessageBox]::Show('zapretgui уже открыт.', 'zapretgui') }
     $script:Lock.Dispose()
     exit
 }
@@ -368,14 +371,20 @@ try {
         Invoke-PanelClosing $eventArgs
         if (!$eventArgs.Cancel -and (Test-ListEdits) -and !(Confirm-DiscardListEdits)) { $eventArgs.Cancel = $true }
     })
-    $script:Window.Add_ContentRendered({
+    function Start-PanelServices {
         if ($script:StartupStarted) { return }
         $script:StartupStarted = $true
         Start-Work 'Startup' '' 'Запускаю установленные утилиты…'
-    })
+    }
+    $script:Window.Add_ContentRendered({ Start-PanelServices })
     Set-Buttons
     $script:Window.Add_Closed({ $script:Window.Dispatcher.InvokeShutdown() })
-    $script:Window.Show()
+    if ($WindowsStartup -and (Get-StartInTray)) {
+        Hide-PanelToTray
+        Start-PanelServices
+    } else {
+        $script:Window.Show()
+    }
     [Windows.Threading.Dispatcher]::Run()
 } catch {
     [void][Windows.MessageBox]::Show($_.Exception.Message, 'zapretgui', 'OK', 'Error')

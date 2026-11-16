@@ -1,4 +1,4 @@
-﻿$script:AppVersion = '1.3.8'
+﻿$script:AppVersion = '1.3.9'
 $script:SettingsKey = 'HKCU:\Software\zapretgui'
 $script:AutoTaskName = 'zapret-GUI-' + $identity.User.Value
 $script:DesktopDir = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'zapretgui\Desktop'
@@ -10,19 +10,31 @@ function Get-AutoStart {
     return [bool]($task -and $task.State -ne 'Disabled')
 }
 
+function Get-StartInTray {
+    $pref = Get-ItemProperty -LiteralPath $script:SettingsKey -Name StartInTray -ErrorAction SilentlyContinue
+    return ($pref.StartInTray -eq 1)
+}
+
+function New-AutoStartAction {
+    $panel = Join-Path $script:DesktopDir 'FlowPanel.ps1'
+    if (!(Test-Path -LiteralPath $panel -PathType Leaf)) {
+        throw 'Установи zapretgui через установщик, чтобы включить автозапуск.'
+    }
+    $powershell = Join-Path $PSHOME 'powershell.exe'
+    $arguments = '-NoLogo -NoProfile -STA -ExecutionPolicy Bypass -WindowStyle Hidden -File "' + $panel + '" -WindowsStartup'
+    New-ScheduledTaskAction -Execute $powershell -Argument $arguments -WorkingDirectory $script:DesktopDir
+}
+
 function Set-AutoStart([bool]$Enabled) {
     if (!$Enabled) {
         Unregister-ScheduledTask -TaskPath '\' -TaskName $script:AutoTaskName -Confirm:$false
         return
     }
-    if (!(Test-Path -LiteralPath (Join-Path $script:DesktopDir 'zapretgui.exe') -PathType Leaf)) {
-        throw 'Установи zapretgui через установщик, чтобы включить автозапуск.'
-    }
     $user = $identity.Name
-    $action = New-ScheduledTaskAction -Execute (Join-Path $script:DesktopDir 'zapretgui.exe') -WorkingDirectory $script:DesktopDir
+    $action = New-AutoStartAction
     $trigger = New-ScheduledTaskTrigger -AtLogOn -User $user
     $principal = New-ScheduledTaskPrincipal -UserId $user -LogonType Interactive -RunLevel Highest
-    $options = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries
+    $options = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -ExecutionTimeLimit ([TimeSpan]::Zero)
     $params = @{
         TaskPath = '\'; TaskName = $script:AutoTaskName
         Action = $action; Trigger = $trigger; Principal = $principal; Settings = $options
@@ -41,7 +53,7 @@ function Show-PanelFromTray {
 function Hide-PanelToTray {
     $script:TrayIcon.Visible = $true
     $script:Window.ShowInTaskbar = $false
-    $script:Window.Hide()
+    if ($script:Window.IsVisible) { $script:Window.Hide() }
 }
 
 function Invoke-PanelClosing($EventArgs) {
@@ -137,6 +149,7 @@ function Initialize-Settings {
     }
     $script:UI.MinimizeToTray.IsChecked = $null -eq $pref -or $pref.MinimizeToTray -eq 1
     $script:UI.AutoStart.IsChecked = Get-AutoStart
+    $script:UI.StartInTray.IsChecked = Get-StartInTray
     $script:UI.InstalledAppVersion.Text = "Установленная версия: $script:AppVersion"
     $script:UI.AutoStart.Add_Click({
         $want = [bool]$script:UI.AutoStart.IsChecked
@@ -147,6 +160,24 @@ function Initialize-Settings {
         } catch {
             $script:UI.AutoStart.IsChecked = Get-AutoStart
             Set-SettingsFeedback "Не удалось изменить автозапуск. $($_.Exception.Message)" $true
+        }
+    })
+    $script:UI.StartInTray.Add_Click({
+        $want = [bool]$script:UI.StartInTray.IsChecked
+        try {
+            if ($want -and (Get-AutoStart)) {
+                # Existing installations may still have a task that opens the normal launcher.
+                $null = Set-ScheduledTask -TaskPath '\' -TaskName $script:AutoTaskName -Action (New-AutoStartAction)
+            }
+            if (!(Test-Path -LiteralPath $script:SettingsKey)) {
+                $null = New-Item -Path $script:SettingsKey -Force
+            }
+            $null = New-ItemProperty -LiteralPath $script:SettingsKey -Name StartInTray -PropertyType DWord -Value ([int]$want) -Force
+            $msg = if ($want) { 'Запуск в фоне включён.' } else { 'Запуск в фоне выключен.' }
+            Set-SettingsFeedback $msg
+        } catch {
+            $script:UI.StartInTray.IsChecked = Get-StartInTray
+            Set-SettingsFeedback "Не удалось сохранить настройку. $($_.Exception.Message)" $true
         }
     })
     $script:UI.MinimizeToTray.Add_Click({
