@@ -495,14 +495,6 @@
                            Text="Проверить версию на GitHub, скачать и установить обновление. Приложение откроется снова после установки."/>
                 <Button x:Name="OpenAppUpdate" Content="Обновить"
                         Style="{StaticResource Primary}" HorizontalAlignment="Left" Margin="0"/>
-                <TextBlock Style="{StaticResource MutedText}" Margin="0,12,0,5"
-                           Text="Для приватного репозитория сохрани токен GitHub с доступом Contents: Read-only. Пустое поле удаляет сохранённый токен."/>
-                <WrapPanel>
-                  <PasswordBox x:Name="GitHubToken" Width="290" Height="35" Margin="0,0,8,0"
-                               Background="#141414" Foreground="#F5F5F5" BorderBrush="#4A4A4A"
-                               Padding="8,5" AutomationProperties.Name="Токен GitHub"/>
-                  <Button x:Name="SaveGitHubToken" Content="Сохранить токен"/>
-                </WrapPanel>
               </StackPanel>
             </Border>
             <TextBlock x:Name="SettingsFeedback" Style="{StaticResource MutedText}" Margin="0,11,0,0"/>

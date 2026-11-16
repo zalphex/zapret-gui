@@ -680,17 +680,11 @@ function Save-EditableList([string]$Payload) {
 function Get-AppUpdate([string]$Current) {
     $source = 'https://api.github.com/repos/zalphex/zapret-gui/contents'
     $headers = @{ Accept='application/vnd.github.raw+json'; 'X-GitHub-Api-Version'='2022-11-28' }
-    $encrypted = Get-ItemPropertyValue -LiteralPath 'HKCU:\Software\zapretgui' -Name GitHubUpdateToken -ErrorAction SilentlyContinue
-    if ($encrypted) {
-        $secure = ConvertTo-SecureString $encrypted
-        try { $headers.Authorization = 'Bearer ' + [Net.NetworkCredential]::new('', $secure).Password }
-        finally { $secure.Dispose() }
-    }
     try {
         $manifest = Invoke-RestMethod -Uri "$source/release/update.json?ref=main" -Headers $headers -UserAgent 'zapretgui' -MaximumRedirection 0 -TimeoutSec 20
     } catch {
         $status = if ($_.Exception.Response) { [int]$_.Exception.Response.StatusCode } else { 0 }
-        if ($status -in @(401,403,404)) { throw 'GitHub не дал доступ к версии. Проверь токен чтения приватного репозитория в настройках.' }
+        if ($status -in @(401,403,404)) { throw 'GitHub не отдал данные обновления. Попробуй позже.' }
         throw
     }
     if ($manifest -is [string]) { $manifest = ConvertFrom-Json $manifest }

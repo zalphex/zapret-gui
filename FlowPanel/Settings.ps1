@@ -1,4 +1,4 @@
-﻿$script:AppVersion = '1.3.5'
+﻿$script:AppVersion = '1.3.6'
 $script:SettingsKey = 'HKCU:\Software\zapretgui'
 $script:AutoTaskName = 'zapret-GUI-' + $identity.User.Value
 $script:DesktopDir = Join-Path ([Environment]::GetFolderPath('ProgramFiles')) 'zapretgui\Desktop'
@@ -133,28 +133,6 @@ function Initialize-Settings {
     $script:UI.MinimizeToTray.IsChecked = $null -eq $pref -or $pref.MinimizeToTray -eq 1
     $script:UI.AutoStart.IsChecked = Get-AutoStart
     $script:UI.InstalledAppVersion.Text = "Установленная версия: $script:AppVersion"
-    $script:UI.SaveGitHubToken.Add_Click({
-        try {
-            $token = $script:UI.GitHubToken.SecurePassword
-            try {
-                if ($token.Length -eq 0) {
-                    Remove-ItemProperty -LiteralPath $script:SettingsKey -Name GitHubUpdateToken -ErrorAction SilentlyContinue
-                    Set-SettingsFeedback 'Сохранённый токен удалён.'
-                    return
-                }
-                if (!(Test-Path -LiteralPath $script:SettingsKey)) {
-                    $null = New-Item -Path $script:SettingsKey -Force
-                }
-                $null = New-ItemProperty -LiteralPath $script:SettingsKey -Name GitHubUpdateToken -PropertyType String -Value (ConvertFrom-SecureString $token) -Force
-                Set-SettingsFeedback 'Токен GitHub сохранён для текущего пользователя Windows.'
-            } finally {
-                $token.Dispose()
-                $script:UI.GitHubToken.Clear()
-            }
-        } catch {
-            Set-SettingsFeedback 'Не удалось сохранить токен GitHub.' $true
-        }
-    })
     $script:UI.AutoStart.Add_Click({
         $want = [bool]$script:UI.AutoStart.IsChecked
         try {
