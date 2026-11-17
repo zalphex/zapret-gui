@@ -96,6 +96,23 @@ public static class FlowProbe
         }
     }
 
+    public static int LocalTcp(int port)
+    {
+        var watch = Stopwatch.StartNew();
+        try
+        {
+            using (var client = new TcpClient(AddressFamily.InterNetwork))
+            {
+                var pending = client.BeginConnect(IPAddress.Loopback, port, null, null);
+                using (var ready = pending.AsyncWaitHandle)
+                    if (!ready.WaitOne(1500)) return -1;
+                client.EndConnect(pending);
+                return (int)watch.ElapsedMilliseconds;
+            }
+        }
+        catch (SocketException) { return -1; }
+    }
+
     private static bool Reserved(byte[] header)
     {
         uint tag = BitConverter.ToUInt32(header, 0);

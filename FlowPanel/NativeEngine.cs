@@ -462,9 +462,12 @@ internal sealed partial class NativeEngine
 
     private static int TgTime(short dc)
     {
-        if (!IsRunning(TgExe) || !File.Exists(TgConfig)) return -1;
-        var config = GetProxyConfig();
-        try { return FlowProbe.Telegram(Int32.Parse(Text(config, "port"), CultureInfo.InvariantCulture), Text(config, "secret"), dc); }
+        try
+        {
+            if (!IsRunning(TgExe) || !File.Exists(TgConfig)) return -1;
+            var config = GetProxyConfig();
+            return FlowProbe.Telegram(Int32.Parse(Text(config, "port"), CultureInfo.InvariantCulture), Text(config, "secret"), dc);
+        }
         catch (Exception) { return -1; }
     }
 
@@ -472,11 +475,35 @@ internal sealed partial class NativeEngine
 
     private void Latency(string name, bool full)
     {
+        if (name == "TG")
+        {
+            ProxyLatency(true);
+            return;
+        }
         int index = Array.IndexOf(ServiceNames, name);
         if (index < 0) throw new ArgumentException("Неизвестный сервис.");
         bool proxy = name == "Telegram" && IsRunning(TgExe);
-        Send("Latency", "Name", name, "HTTPS", FlowProbe.Https(Web[index]), "ICMP", full ? FlowProbe.Icmp(Hosts[index]) : -1,
-            "MTProto", proxy ? TgTime(2) : -1, "ProxyRunning", proxy, "Full", full);
+        int https = FlowProbe.Https(Web[index]), icmp = full ? FlowProbe.Icmp(Hosts[index]) : -1;
+        int mtproto = name == "Telegram" ? ProxyLatency(false) : -1;
+        Send("Latency", "Name", name, "HTTPS", https, "ICMP", icmp,
+            "MTProto", mtproto, "ProxyRunning", proxy, "Full", full);
+    }
+
+    private int ProxyLatency(bool full)
+    {
+        bool running = IsRunning(TgExe);
+        int latency = running ? TgTime(2) : -1;
+        if (running && latency < 0) latency = TgTime(4);
+        int tcp = -1;
+        if (running && latency < 0)
+        {
+            try { tcp = FlowProbe.LocalTcp(Int32.Parse(Text(GetProxyConfig(), "port"), CultureInfo.InvariantCulture)); }
+            catch (IOException) { }
+            catch (InvalidOperationException) { }
+            catch (ArgumentException) { }
+        }
+        Send("ProxyLatency", "MTProto", latency, "LocalTcp", tcp, "ProxyRunning", running, "Full", full);
+        return latency;
     }
 
     private void Test(string name, bool apply)

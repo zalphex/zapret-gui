@@ -33,6 +33,7 @@ internal sealed class MainPanel : Form
     private readonly List<Action> refresh = new List<Action>();
     private readonly Dictionary<string, string> winners = new Dictionary<string, string>();
     private Dictionary<string, object> state, loadedList, update;
+    private string proxyLatency = "";
     private bool busy, explicitExit, updatingAutoStart, autoStartEnabled;
     private readonly bool fromTray;
     private readonly Func<bool> mayRun;
@@ -109,6 +110,7 @@ internal sealed class MainPanel : Form
         ToolControls(setup, "TG WS Proxy", "TG", proxy);
         var ping = Row(Section(setup, "Пинг сервисов"));
         foreach (var name in new[] { "YouTube", "Discord", "Telegram" }) Add(ping, "Пинг " + name, "Ping", name);
+        Add(ping, "Пинг TG WS Proxy", "Ping", "TG");
         var journal = Section(setup, "Журнал");
         journal.Controls.Add(activity);
         FitWidth(journal, activity, journal.Padding.Horizontal + 8);
@@ -529,6 +531,7 @@ internal sealed class MainPanel : Form
         {
             case "State":
                 state = result;
+                if (!Flag(state, "TGRunning")) proxyLatency = "";
                 Utility("Zapret", "Zap");
                 Utility("TG", "TG");
                 Fill(zap, "Strategies", "Zapret", "general.bat");
@@ -556,6 +559,12 @@ internal sealed class MainPanel : Form
                 if (name == "Telegram") latency += " · MTProto " + (Flag(result, "ProxyRunning") ? Metric(result, "MTProto") : "прокси выключен");
                 cards[name].Text = latency.Substring(name.Length + 3);
                 if (Flag(result, "Full")) Log(latency);
+                break;
+            case "ProxyLatency":
+                proxyLatency = Flag(result, "ProxyRunning") ? "MTProto " + Metric(result, "MTProto") : "";
+                if (Number(result, "LocalTcp") >= 0) proxyLatency += " · TCP локально " + Metric(result, "LocalTcp");
+                if (state != null) Utility("TG", "TG");
+                if (Flag(result, "Full")) Log("TG WS Proxy - " + (proxyLatency == "" ? "прокси выключен" : proxyLatency));
                 break;
             case "Folder":
                 using (Process.Start("explorer.exe", "\"" + Value(result, "Path") + "\"")) { }
@@ -586,7 +595,8 @@ internal sealed class MainPanel : Form
         string profile = Value(state, key);
         cards[key].Text = message +
             (version.Length == 0 ? "" : "  " + version) +
-            (profile.Length == 0 ? "" : "  " + profile);
+            (profile.Length == 0 ? "" : "  " + profile) +
+            (key == "TG" && Flag(state, "TGRunning") && proxyLatency.Length != 0 ? Environment.NewLine + proxyLatency : "");
     }
 
     private void Fill(ComboBox box, string entries, string key, string fallback)

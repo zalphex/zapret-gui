@@ -1,7 +1,6 @@
 using System;
 using System.Diagnostics;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Security.Principal;
 using System.Text.RegularExpressions;
 
@@ -30,9 +29,10 @@ internal static class NativeSetup
     private static dynamic FindTask(dynamic folder, string name)
     {
         try { return folder.GetTask(name); }
-        catch (COMException error)
+        catch (Exception error)
         {
-            if (error.ErrorCode == unchecked((int)0x80070002)) return null;
+            // The COM interop layer can translate this HRESULT to FileNotFoundException.
+            if (error.HResult == unchecked((int)0x80070002)) return null;
             throw;
         }
     }
