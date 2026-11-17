@@ -12,7 +12,7 @@ using Microsoft.Win32;
 
 internal static class PanelHost
 {
-    internal const string Version = "1.3.16";
+    internal const string Version = "1.3.17";
     private const string MutexName = @"Local\FlowPanel.Flowseal.Manager";
     private const string OpenEvent = @"Local\zapretgui.OpenStartupTray";
     internal static readonly string Desktop = Path.Combine(

@@ -73,7 +73,9 @@ internal sealed class MainPanel : Form
         body.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 190));
         body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
         body.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        navigation.Dock = DockStyle.Fill;
+        navigation.Dock = DockStyle.Top;
+        navigation.AutoSize = true;
+        navigation.AutoSizeMode = AutoSizeMode.GrowAndShrink;
         navigation.FlowDirection = FlowDirection.TopDown;
         navigation.WrapContents = false;
         navigation.BackColor = Surface;
@@ -440,7 +442,7 @@ internal sealed class MainPanel : Form
     private static TextBox Editor(bool readOnly)
     {
         return new DarkTextBox { Width = 670, Height = readOnly ? 165 : 340, Multiline = true,
-            ReadOnly = readOnly, ScrollBars = readOnly ? ScrollBars.None : ScrollBars.Both,
+            ReadOnly = readOnly, ScrollBars = readOnly ? ScrollBars.Vertical : ScrollBars.Both,
             WordWrap = readOnly, MaxLength = 0, BorderStyle = BorderStyle.None,
             BackColor = Color.FromArgb(10, 10, 10), ForeColor = Color.White };
     }

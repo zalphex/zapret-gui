@@ -23,9 +23,7 @@ internal static class DarkScroll
 
     internal static void Paint(Control control, int message)
     {
-        if (!control.IsHandleCreated ||
-            (message != 0x0085 && message != 0x000F && message != 0x0114 && message != 0x0115 &&
-             message != 0x020A && message != 0x0100 && message != 0x0005)) return;
+        if (!control.IsHandleCreated || !CanRepaintScrollbars(message)) return;
 
         int side = control.Width - control.ClientSize.Width;
         int bottom = control.Height - control.ClientSize.Height;
@@ -47,6 +45,35 @@ internal static class DarkScroll
             }
         }
         finally { ReleaseDC(control.Handle, dc); }
+    }
+
+    private static bool CanRepaintScrollbars(int message)
+    {
+        // Windows also paints native scrollbars during non-client pointer
+        // messages, even when the control's content does not need repainting.
+        switch (message)
+        {
+            case 0x0005: // WM_SIZE
+            case 0x000F: // WM_PAINT
+            case 0x0085: // WM_NCPAINT
+            case 0x00A0: // WM_NCMOUSEMOVE
+            case 0x00A1: // WM_NCLBUTTONDOWN
+            case 0x00A2: // WM_NCLBUTTONUP
+            case 0x00A3: // WM_NCLBUTTONDBLCLK
+            case 0x0100: // WM_KEYDOWN
+            case 0x0114: // WM_HSCROLL
+            case 0x0115: // WM_VSCROLL
+            case 0x0200: // WM_MOUSEMOVE (while captured)
+            case 0x0202: // WM_LBUTTONUP
+            case 0x020A: // WM_MOUSEWHEEL
+            case 0x020E: // WM_MOUSEHWHEEL
+            case 0x0215: // WM_CAPTURECHANGED
+            case 0x02A0: // WM_NCMOUSEHOVER
+            case 0x02A2: // WM_NCMOUSELEAVE
+                return true;
+            default:
+                return false;
+        }
     }
 
     private static void Draw(Graphics graphics, IntPtr window, int bar, Rectangle bounds, Brush track, Brush thumb)
