@@ -4,10 +4,10 @@ Name "zapretgui"
 OutFile "../zapret_GUI_Setup_x64.exe"
 InstallDir "$PROGRAMFILES64\zapretgui\Desktop"
 SetCompressor /SOLID lzma
-VIProductVersion "1.3.9.0"
+VIProductVersion "1.3.16.0"
 VIAddVersionKey /LANG=1049 "ProductName" "zapretgui"
 VIAddVersionKey /LANG=1049 "FileDescription" "Установщик zapretgui"
-VIAddVersionKey /LANG=1049 "FileVersion" "1.3.9"
+VIAddVersionKey /LANG=1049 "FileVersion" "1.3.16"
 
 !include "MUI2.nsh"
 !include "x64.nsh"
@@ -53,15 +53,16 @@ Function un.onInit
   !insertmacro CheckForRunning
 FunctionEnd
 
-!macro AppFiles
-  File "zapretgui.exe"
-  File "FlowPanel.ps1"
-  File "Settings.ps1"
-  File "TaskbarIdentity.cs"
-  File "AppUpdate.ps1"
-  File "Engine.ps1"
-  File "Panel.xaml"
-  File "Probe.cs"
+!macro RemoveLegacyScripts Directory
+  Delete "${Directory}\FlowPanel.ps1"
+  Delete "${Directory}\Settings.ps1"
+  Delete "${Directory}\PanelWorker.ps1"
+  Delete "${Directory}\AutoStart.ps1"
+  Delete "${Directory}\AppUpdate.ps1"
+  Delete "${Directory}\Engine.ps1"
+  Delete "${Directory}\Migrate.ps1"
+  Delete "${Directory}\RegisterShortcut.ps1"
+  Delete "${Directory}\Uninstall.ps1"
 !macroend
 
 Section "zapretgui"
@@ -71,14 +72,11 @@ Section "zapretgui"
 
   ; The scheduled task and uninstaller always run from Program Files.
   SetOutPath "$PROGRAMFILES64\zapretgui\Desktop"
-  !insertmacro AppFiles
-  File "Uninstall.ps1"
+  File /oname=zapretgui.exe "zapretgui.exe"
+  File /oname=zapretgui-tray.exe "zapretgui.exe"
   WriteUninstaller "$PROGRAMFILES64\zapretgui\Desktop\Uninstall.exe"
-  File "Migrate.ps1"
-  File "RegisterShortcut.ps1"
-  !insertmacro DisableX64FSRedirection
-  ExecWait '"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "$PROGRAMFILES64\zapretgui\Desktop\Migrate.ps1"' $0
-  !insertmacro EnableX64FSRedirection
+  StrCpy $0 -1
+  ExecWait '"$OUTDIR\zapretgui.exe" --setup migrate' $0
   ${If} $0 != 0
     MessageBox MB_OK|MB_ICONSTOP "Не удалось перенести предыдущую установку. Старые списки и конфиги сохранены."
     Abort
@@ -86,35 +84,36 @@ Section "zapretgui"
 
   SetOutPath "$INSTDIR"
   ${If} "$INSTDIR" != "$PROGRAMFILES64\zapretgui\Desktop"
-    !insertmacro AppFiles
+    File /oname=zapretgui.exe "zapretgui.exe"
   ${EndIf}
   File "README.txt"
   Delete "$SMPROGRAMS\zapret GUI\zapret GUI.lnk"
   RMDir "$SMPROGRAMS\zapret GUI"
   CreateDirectory "$SMPROGRAMS\zapretgui"
   CreateShortcut "$SMPROGRAMS\zapretgui\zapretgui.lnk" "$INSTDIR\zapretgui.exe" "" "$INSTDIR\zapretgui.exe" 0
-  !insertmacro DisableX64FSRedirection
-  ExecWait '"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "$PROGRAMFILES64\zapretgui\Desktop\RegisterShortcut.ps1" -Shortcut "$SMPROGRAMS\zapretgui\zapretgui.lnk"' $0
-  !insertmacro EnableX64FSRedirection
+  StrCpy $0 -1
+  ExecWait '"$PROGRAMFILES64\zapretgui\Desktop\zapretgui.exe" --setup shortcut "$SMPROGRAMS\zapretgui\zapretgui.lnk"' $0
   ${If} $0 != 0
     DetailPrint "Не удалось задать имя приложения для панели задач."
   ${EndIf}
   WriteRegStr HKLM "${UNKEY}" "DisplayName" "zapretgui"
-  WriteRegStr HKLM "${UNKEY}" "DisplayVersion" "1.3.9"
+  WriteRegStr HKLM "${UNKEY}" "DisplayVersion" "1.3.16"
   WriteRegStr HKLM "${UNKEY}" "InstallLocation" "$INSTDIR"
   WriteRegStr HKLM "${UNKEY}" "DisplayIcon" "$INSTDIR\zapretgui.exe"
   WriteRegStr HKLM "${UNKEY}" "UninstallString" '$\"$PROGRAMFILES64\zapretgui\Desktop\Uninstall.exe$\"'
   WriteRegDWORD HKLM "${UNKEY}" "NoModify" 1
   WriteRegDWORD HKLM "${UNKEY}" "NoRepair" 1
+  !insertmacro RemoveLegacyScripts "$PROGRAMFILES64\zapretgui\Desktop"
+  ${If} "$INSTDIR" != "$PROGRAMFILES64\zapretgui\Desktop"
+    !insertmacro RemoveLegacyScripts "$INSTDIR"
+  ${EndIf}
 SectionEnd
 
 !macro RemoveAppFiles Directory
   Delete "${Directory}\zapretgui.exe"
-  Delete "${Directory}\FlowPanel.ps1"
-  Delete "${Directory}\Settings.ps1"
+  Delete "${Directory}\zapretgui-tray.exe"
+  !insertmacro RemoveLegacyScripts "${Directory}"
   Delete "${Directory}\TaskbarIdentity.cs"
-  Delete "${Directory}\AppUpdate.ps1"
-  Delete "${Directory}\Engine.ps1"
   Delete "${Directory}\Panel.xaml"
   Delete "${Directory}\Probe.cs"
   Delete "${Directory}\README.txt"
@@ -129,9 +128,8 @@ Section "Uninstall"
   ${If} $2 == ""
     StrCpy $2 "$1"
   ${EndIf}
-  !insertmacro DisableX64FSRedirection
-  ExecWait '"$WINDIR\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "$1\Uninstall.ps1"' $0
-  !insertmacro EnableX64FSRedirection
+  StrCpy $0 -1
+  ExecWait '"$1\zapretgui.exe" --setup uninstall' $0
   ${If} $0 != 0
     MessageBox MB_OK|MB_ICONSTOP "Не удалось отключить автозапуск. Повтори удаление позже."
     Abort
@@ -143,9 +141,6 @@ Section "Uninstall"
   ${If} "$1" != "$2"
     !insertmacro RemoveAppFiles "$1"
   ${EndIf}
-  Delete "$1\Migrate.ps1"
-  Delete "$1\RegisterShortcut.ps1"
-  Delete "$1\Uninstall.ps1"
   Delete "$1\Uninstall.exe"
   RMDir "$1"
 SectionEnd

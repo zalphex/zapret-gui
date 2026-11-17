@@ -160,7 +160,13 @@ public static class ZapretProxyTray
                 Window = window,
                 IconId = unchecked((uint)id)
             };
-            Shell_NotifyIconW(2, ref icon); // NIM_DELETE
+            if (!Shell_NotifyIconW(2, ref icon)) // NIM_DELETE
+            {
+                // Some pystray releases pass hID instead of the uID field in
+                // NOTIFYICONDATA. ctypes then leaves the actual icon ID at zero.
+                icon.IconId = 0;
+                Shell_NotifyIconW(2, ref icon);
+            }
             return true;
         }, IntPtr.Zero);
     }
