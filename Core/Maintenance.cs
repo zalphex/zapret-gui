@@ -10,6 +10,11 @@ using Microsoft.Win32;
 internal static class Maintenance
 {
     internal static readonly string UpdateFlag = Path.Combine(Paths.Utils, "check_updates.enabled");
+    internal static bool CheckUpdates
+    {
+        get { return Disk.Option("CheckZapretUpdates", File.Exists(UpdateFlag)); }
+    }
+
     internal static string[] Samples()
     {
         return Directory.Exists(Paths.Bin) ? Directory.GetFiles(Paths.Bin, "*.bin").Select(Path.GetFileName).Where(s => !s.StartsWith("ACTIVE_", StringComparison.OrdinalIgnoreCase)).OrderBy(s => s).ToArray() : new string[0];
@@ -125,40 +130,74 @@ internal static class Maintenance
                 throw new IOException("Некорректная запись hosts.");
         }
 
-        var lines = current.Replace("\r", "").Split('\n').ToList();
-        int a = lines.IndexOf(Begin), b = lines.IndexOf(End);
-        if (a >= 0 || b >= 0)
-        {
-            if (a < 0 || b <= a || a != lines.LastIndexOf(Begin) || b != lines.LastIndexOf(End))
-                throw new IOException("Проверь границы блока zapretgui в hosts.");
-            lines.RemoveRange(a, b - a + 1);
-        }
-
-        while (lines.Count > 0 && lines.Last() == "")
-            lines.RemoveAt(lines.Count - 1);
-        lines.Add("");
-        lines.Add(Begin);
-        lines.AddRange(rows);
-        lines.Add(End);
-        lines.Add("");
-        return string.Join("\r\n", lines);
+        string withoutBlock = RemoveHostsBlock(current);
+        string separator = withoutBlock.Length == 0 || withoutBlock.EndsWith("\n") ? "" : "\r\n";
+        return withoutBlock + separator + Begin + "\r\n" + string.Join("\r\n", rows) + "\r\n" + End + "\r\n";
     }
 
-    internal static void Hosts()
+    internal static string RemoveHostsBlock(string current)
     {
-        string path = Path.Combine(Environment.SystemDirectory, "drivers", "etc", "hosts");
-        var source = Downloads.Text(Downloads.ServiceFiles + "hosts", 262144);
-        var before = Disk.Snapshot(path);
-        string text = before == null ? "" : Disk.Utf8.GetString(before);
-        if (before != null && !Disk.Utf8.GetBytes(text).SequenceEqual(before))
+        var begin = System.Text.RegularExpressions.Regex.Matches(current, "^" + Begin + @"\r?$",
+            System.Text.RegularExpressions.RegexOptions.Multiline);
+        var end = System.Text.RegularExpressions.Regex.Matches(current, "^" + End + @"\r?$",
+            System.Text.RegularExpressions.RegexOptions.Multiline);
+        if (begin.Count == 0 && end.Count == 0) return current;
+        if (begin.Count != 1 || end.Count != 1 || begin[0].Index >= end[0].Index)
+            throw new IOException("Проверь границы блока zapretgui в hosts.");
+        int after = end[0].Index + end[0].Length;
+        if (after < current.Length && current[after] == '\n') after++;
+        return current.Remove(begin[0].Index, after - begin[0].Index);
+    }
+
+    private static string HostsPath
+    {
+        get { return Path.Combine(Environment.SystemDirectory, "drivers", "etc", "hosts"); }
+    }
+
+    internal static string HostsSource()
+    {
+        return Downloads.Text(Downloads.ServiceFiles + "hosts", 262144);
+    }
+
+    private static string DecodeHosts(byte[] content)
+    {
+        if (content == null) return "";
+        string text = Disk.Utf8.GetString(content);
+        if (!Disk.Utf8.GetBytes(text).SequenceEqual(content))
             throw new IOException("Файл hosts использует другую кодировку. Изменения не записаны.");
-        string merged = MergeHosts(text, source);
-        if (merged == text)
-            return;
-        if (Disk.Token(Disk.Snapshot(path)) != Disk.Token(before))
-            throw new IOException("Файл hosts был изменён.");
+        return text;
+    }
+
+    internal static bool CanRestoreHosts()
+    {
+        var before = Disk.Snapshot(HostsPath);
+        return before != null && Disk.Utf8.GetString(before).Contains(Begin);
+    }
+
+    internal static void RestoreHosts()
+    {
+        var before = Disk.Snapshot(HostsPath);
+        string oldText = DecodeHosts(before);
+        SaveHosts(before, oldText, RemoveHostsBlock(oldText));
+    }
+
+    internal static void Hosts(string expected)
+    {
+        string source = HostsSource();
+        if (Disk.Token(Disk.Utf8.GetBytes(source)) != expected)
+            throw new IOException("Список Flowseal изменился. Открой предпросмотр снова.");
+        var before = Disk.Snapshot(HostsPath);
+        string oldText = DecodeHosts(before);
+        SaveHosts(before, oldText, MergeHosts(oldText, source));
+    }
+
+    private static void SaveHosts(byte[] before, string oldText, string next)
+    {
+        if (next == oldText) return;
         if (before != null)
-            Disk.Write(path + ".zapretgui-" + DateTime.Now.ToString("yyyyMMdd-HHmmss-fff") + ".bak", before);
-        Disk.Write(path, Disk.Utf8.GetBytes(merged));
+            Disk.Write(HostsPath + ".zapretgui-" + Guid.NewGuid().ToString("N") + ".bak", before);
+        if (Disk.Token(Disk.Snapshot(HostsPath)) != Disk.Token(before))
+            throw new IOException("Файл hosts был изменён.");
+        Disk.Write(HostsPath, Disk.Utf8.GetBytes(next));
     }
 }

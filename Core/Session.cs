@@ -127,44 +127,57 @@ internal sealed class Session
         Parallel.For(0, Checks.Services.Length, Measure);
     }
 
-    internal async Task Test(Component c, bool apply)
+    internal async Task Test(Component c, bool apply, Func<string, bool> confirm = null)
     {
         string winner = null;
         LastError = "";
         if (await Run("Проверка конфигов " + Components.Title(c), token =>
         {
-            winner = Checks.Test(c, apply, token, Log, (i, n, s) => Post(() =>
+            Action<int, int, string> progress = (i, n, name) => Post(() =>
             {
-                Activity = Components.Title(c) + " · " + i + " / " + n + " · " + s;
+                Activity = Components.Title(c) + " · " + i + " / " + n + " · " + name;
                 Notify();
-            }));
+            });
+            if (c == Component.Zapret)
+                winner = AdminOperations.Invoke("test", new[] { apply ? "preview" : "report" }, token, Log, progress, name =>
+                {
+                    bool accepted = false;
+                    ui.Send(_ => { if (confirm != null) accepted = confirm(name); }, null);
+                    return accepted;
+                });
+            else
+                winner = Checks.Test(c, apply, token, Log, progress);
         }, true))
         {
-            Winners[c] = winner;
+            if (!string.IsNullOrEmpty(winner))
+                Winners[c] = winner;
             var ev = Finished;
             if (ev != null)
                 ev();
         }
     }
 
-    internal async Task Start(bool visible)
+    internal async Task Start(bool visible, bool scheduled)
     {
         await Run("Запуск компонентов", token =>
         {
-            foreach (var c in Components.All)
+            try
             {
-                if (!Components.Installed(c) || Processes.Running(Paths.Binary(c)))
-                    continue;
-                try
+                UserSession.MigrateProxy();
+                if (Components.Installed(Component.TG) && !Processes.Running(Paths.TgExe))
                 {
-                    Components.Start(c, Components.Selected(c));
-                    Log(Components.Title(c) + " запущен.");
-                }
-                catch (Exception ex)
-                {
-                    Log(Components.Title(c) + " · " + ex.GetBaseException().Message);
+                    Components.Start(Component.TG, Components.Selected(Component.TG));
+                    Log("TG WS Proxy запущен.");
                 }
             }
+            catch (Exception ex) { Log("TG WS Proxy · " + ex.GetBaseException().Message); }
+
+            try
+            {
+                if (!scheduled && Components.Installed(Component.Zapret) && !Processes.Running(Paths.ZapExe))
+                    AdminOperations.Invoke("start");
+            }
+            catch (Exception ex) { Log("zapret · " + ex.GetBaseException().Message); }
 
             try
             {
@@ -177,7 +190,7 @@ internal sealed class Session
 
             if (visible)
                 MeasureAll();
-            if (File.Exists(Maintenance.UpdateFlag))
+            if (Maintenance.CheckUpdates)
                 try
                 {
                     string v = Downloads.Latest(Component.Zapret).Version;

@@ -174,7 +174,7 @@ internal static class Downloads
         }
 
         string live = c == Component.Zapret ? Paths.Zap : Paths.Tg;
-        string stage = Path.Combine(Paths.Root, "stage-" + Guid.NewGuid().ToString("N"));
+        string stage = Path.Combine(c == Component.Zapret ? Paths.Root : Paths.UserRoot, "stage-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(stage);
         string ready = Path.Combine(stage, "ready"), old = Path.Combine(stage, "previous"), file = Path.Combine(stage, a.Name);
         bool resume = false, swapped = false, keep = false;
@@ -260,7 +260,7 @@ internal static class Downloads
         }
     }
 
-    internal static UpdateFile App()
+    internal static UpdateFile App(bool download = true)
     {
         var info = Disk.Parse(Text(Published + "update.json", 128 * 1024));
         string v = Disk.Get(info, "version"), hash = Disk.Get(info, "sha256");
@@ -268,6 +268,8 @@ internal static class Downloads
             throw new InvalidDataException("Повреждён файл версии zapretgui.");
         if (new Version(v) <= new Version(Paths.Version))
             return null;
+        if (!download)
+            return new UpdateFile { Version = v };
         string path = Path.Combine(Paths.Desktop, "update-" + Guid.NewGuid().ToString("N") + ".exe");
         try
         {

@@ -14,8 +14,8 @@ using W = System.Windows;
 [assembly: AssemblyTitle("zapretgui")]
 [assembly: AssemblyProduct("zapretgui")]
 [assembly: AssemblyCompany("zalphex")]
-[assembly: AssemblyVersion("2.0.0.0")]
-[assembly: AssemblyFileVersion("2.0.0.0")]
+[assembly: AssemblyVersion("2.1.0.0")]
+[assembly: AssemblyFileVersion("2.1.0.0")]
 internal static class Program
 {
     internal const string MutexId = @"Local\FlowPanel.Flowseal.Manager", OpenId = @"Local\zapretgui.OpenStartupTray";
@@ -25,25 +25,26 @@ internal static class Program
         try
         {
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
-            bool setup = args.Length >= 2 && args[0] == "--setup";
-            bool scheduled = Path.GetFileNameWithoutExtension(F.Application.ExecutablePath).Equals("zapretgui-tray", StringComparison.OrdinalIgnoreCase);
-            using (var user = WindowsIdentity.GetCurrent())
-            {
-                if (!new WindowsPrincipal(user).IsInRole(WindowsBuiltInRole.Administrator))
-                {
-                    if (setup)
-                        return 1;
-                    string trusted = Path.Combine(Paths.Desktop, scheduled ? "zapretgui-tray.exe" : "zapretgui.exe");
-                    using (Process.Start(new ProcessStartInfo(trusted) { UseShellExecute = true, Verb = "runas" }))
-                    {
-                    }
+            bool elevated = AdminOperations.Elevated;
+            if (args.Length == 3 && args[0] == "--admin")
+                return AdminOperations.Serve(args[1], int.Parse(args[2]));
+            if (args.Length == 1 && args[0] == "--scheduled-zap")
+                return elevated ? AdminOperations.InSystemLock(() => { AdminOperations.StartZap(); return 0; }) : 1;
+            if (args.Length >= 2 && args[0] == "--setup")
+                return elevated ? NativeSetup.Run(args) : 1;
+            if (args.Length == 2 && args[0] == "--update-ui")
+                return UserSession.Update(int.Parse(args[1]));
 
-                    return 0;
-                }
+            bool scheduled = Path.GetFileNameWithoutExtension(F.Application.ExecutablePath)
+                .Equals("zapretgui-tray", StringComparison.OrdinalIgnoreCase);
+            if (elevated)
+            {
+                if (args.Length == 1 && args[0] == "--desktop-user")
+                    throw new IOException("Открой zapretgui из обычного сеанса Windows.");
+                UserSession.OpenFromExplorer(scheduled);
+                return 0;
             }
 
-            if (setup)
-                return NativeSetup.Run(args);
             using (var mutex = new Mutex(false, MutexId))
             {
                 bool first;
@@ -73,11 +74,11 @@ internal static class Program
 
                 try
                 {
-                    NativeSetup.CleanUpdateRunners();
+                    UserSession.CleanRunners();
                     ZapretTaskbarIdentity.SetProcess();
                     F.Application.EnableVisualStyles();
                     F.Application.SetCompatibleTextRenderingDefault(false);
-                    using (var context = new TrayHost(scheduled && Disk.Option("StartInTray", true)))
+                    using (var context = new TrayHost(scheduled, scheduled && Disk.Option("StartInTray", true)))
                         F.Application.Run(context);
                 }
                 finally
@@ -111,7 +112,7 @@ internal sealed class TrayHost : F.ApplicationContext
     private readonly Session session;
     private Shell shell;
     private bool ending, openedDuringStartup, startupFinished;
-    internal TrayHost(bool hidden)
+    internal TrayHost(bool scheduled, bool hidden)
     {
         var handle = dispatcher.Handle;
         var context = new F.WindowsFormsSynchronizationContext();
@@ -188,7 +189,7 @@ internal sealed class TrayHost : F.ApplicationContext
         {
             if (!hidden)
                 OpenWindow();
-            await session.Start(!hidden);
+            await session.Start(!hidden, scheduled);
             startupFinished = true;
             if (hidden && openedDuringStartup && session.Latency.Count == 0 && !ending)
                 await session.Run("Проверка связи", t => session.MeasureAll());
@@ -264,15 +265,12 @@ internal sealed class TrayHost : F.ApplicationContext
         ExitThread();
     }
 
-    internal void FinishUpdate(UpdateFile update)
+    internal void FinishUpdate()
     {
         if (shell != null && !shell.CanDiscard())
-        {
-            File.Delete(update.Path);
             return;
-        }
 
-        NativeSetup.QueueUpdate(update.Path, update.Hash);
+        UserSession.QueueUpdate();
         ending = true;
         if (shell != null)
             shell.CloseForExit();

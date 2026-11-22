@@ -135,6 +135,10 @@ internal static class Components
         Guard(c);
         if (c == Component.TG)
         {
+#if !ISOLATED_TESTS
+            if (AdminOperations.Elevated)
+                throw new InvalidOperationException("TG WS Proxy запускается из обычного окна zapretgui.");
+#endif
             ProxySettings.Ensure();
             int port = Convert.ToInt32(ProxySettings.Read()["port"]);
             if (IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners().Any(ep => ep.Port == port))
@@ -172,6 +176,11 @@ internal static class Components
 
     internal static void Apply(Component c, string next)
     {
+        Apply(c, next, null);
+    }
+
+    internal static bool Apply(Component c, string next, Func<string, bool> confirm)
+    {
         Guard(c);
         if (c == Component.Zapret)
             Strategies.Arguments(next);
@@ -181,23 +190,35 @@ internal static class Components
         string previous = Selected(c), service = c == Component.Zapret ? ZapService.Image : null;
         var backup = c == Component.TG ? Disk.Snapshot(Paths.Config) : null;
         Stop(c);
+        bool committed = false;
         try
         {
             if (c == Component.TG)
                 ProxySettings.Profile(next);
             Start(c, next);
+            if (confirm != null)
+            {
+                if (!confirm(next))
+                    return false;
+                if (!Processes.Running(Paths.Binary(c)))
+                    throw new IOException("Компонент завершился во время пробного запуска.");
+            }
             Disk.Remember(c.ToString(), next);
+            committed = true;
+            return true;
         }
-        catch
+        finally
         {
-            Stop(c);
-            if (c == Component.TG)
-                Disk.Restore(Paths.Config, backup);
-            if (service != null)
-                ZapService.SetImage(service);
-            if (running)
-                Start(c, previous);
-            throw;
+            if (!committed)
+            {
+                Stop(c);
+                if (c == Component.TG)
+                    Disk.Restore(Paths.Config, backup);
+                if (service != null)
+                    ZapService.SetImage(service);
+                if (running)
+                    Start(c, previous);
+            }
         }
     }
 

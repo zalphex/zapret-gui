@@ -16,20 +16,50 @@ internal static class Processes
         return string.Equals(a, b, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string Image(Process p)
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr OpenProcess(uint access, bool inherit, int id);
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern bool QueryFullProcessImageName(IntPtr process, int flags, System.Text.StringBuilder name, ref int size);
+    [DllImport("kernel32.dll")]
+    private static extern bool CloseHandle(IntPtr handle);
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool OpenProcessToken(IntPtr process, uint access, out IntPtr token);
+
+    internal static string UserSid(int pid)
     {
+        var process = OpenProcess(0x1000, false, pid);
+        if (process == IntPtr.Zero)
+            throw new Win32Exception(Marshal.GetLastWin32Error());
         try
         {
-            return p.MainModule.FileName;
+            IntPtr token;
+            if (!OpenProcessToken(process, 8, out token))
+                throw new Win32Exception(Marshal.GetLastWin32Error());
+            try
+            {
+                using (var identity = new System.Security.Principal.WindowsIdentity(token))
+                    return identity.User.Value;
+            }
+            finally { CloseHandle(token); }
         }
-        catch (Win32Exception)
+        finally { CloseHandle(process); }
+    }
+
+    private static string Image(Process p)
+    {
+#if ISOLATED_TESTS
+        try { return p.MainModule.FileName; } catch (Exception) { return ""; }
+#else
+        var process = OpenProcess(0x1000, false, p.Id);
+        if (process == IntPtr.Zero) return "";
+        try
         {
-            return "";
+            var path = new System.Text.StringBuilder(32768);
+            int length = path.Capacity;
+            return QueryFullProcessImageName(process, 0, path, ref length) ? path.ToString() : "";
         }
-        catch (InvalidOperationException)
-        {
-            return "";
-        }
+        finally { CloseHandle(process); }
+#endif
     }
 
     private static bool Visit(string path, bool external, Action<Process> act)

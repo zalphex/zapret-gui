@@ -87,7 +87,7 @@ internal static class Checks
         };
     }
 
-    internal static string Test(Component c, bool apply, CancellationToken token, Action<string> log, Action<int, int, string> progress)
+    internal static string Test(Component c, bool apply, CancellationToken token, Action<string> log, Action<int, int, string> progress, Func<string, bool> confirm = null)
     {
         Components.Guard(c);
         bool zap = c == Component.Zapret;
@@ -166,8 +166,11 @@ internal static class Checks
         var winner = Trial.Winner(results);
         if (winner == null)
             throw new IOException("Ни один конфиг не получил ответа. Исходное состояние восстановлено.");
-        if (apply)
-            Components.Apply(c, winner.Name);
+        if (apply && !Components.Apply(c, winner.Name, confirm))
+        {
+            log("Конфиг не сохранён. Исходное состояние восстановлено.");
+            return null;
+        }
         log((apply ? "Применён лучший конфиг: " : "Лучший конфиг: ") + winner.Name);
         return winner.Name;
     }

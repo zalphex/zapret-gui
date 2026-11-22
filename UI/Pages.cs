@@ -96,7 +96,7 @@ internal sealed partial class Shell
             foreach (var c in Components.All)
                 try
                 {
-                    Downloads.Install(c, session.Log);
+                    InstallComponent(c);
                 }
                 catch (Exception e)
                 {
@@ -140,19 +140,32 @@ internal sealed partial class Shell
             Button(row, "Применить", () =>
             {
                 var name = (string)box.SelectedItem;
-                return session.RunSimple("Применение конфига", () => Components.Apply(c, name));
+                return session.RunSimple("Применение конфига", () =>
+                {
+                    if (c == Component.Zapret) AdminOperations.Invoke("apply", name);
+                    else Components.Apply(c, name);
+                });
             }, true, () => installed() && box.SelectedItem != null);
             Click(row, "Папка", () => OpenFolder(c == Component.TG ? Paths.TgData : Paths.Zap), false, installed);
-            Job(row, "Скачать", () => Downloads.Install(c, session.Log));
+            Job(row, "Скачать", () => InstallComponent(c));
             var tests = Actions(card);
             Button(tests, "Проверить конфиги", () => session.Test(c, false), false, installed);
-            Button(tests, "Автовыбор и запуск", () => session.Test(c, true), false, installed);
+            Button(tests, "Автовыбор и запуск", () => session.Test(c, true, ConfirmStrategy), false, installed);
             Job(tests, "Перезапустить", () =>
             {
-                Components.Stop(c);
-                Components.Start(c, Components.Selected(c));
+                if (c == Component.Zapret)
+                    AdminOperations.Invoke("restart");
+                else
+                {
+                    Components.Stop(c);
+                    Components.Start(c, Components.Selected(c));
+                }
             }, false, installed);
-            Job(tests, "Остановить", () => Components.Stop(c), false, installed);
+            Job(tests, "Остановить", () =>
+            {
+                if (c == Component.Zapret) AdminOperations.Invoke("stop");
+                else Components.Stop(c);
+            }, false, installed);
             if (c == Component.TG)
                 Click(tests, "Подключить Telegram", () => TrayHost.Launch(ProxySettings.Link()), false, () => File.Exists(Paths.Config));
         }
@@ -178,22 +191,31 @@ internal sealed partial class Shell
         {
             var chosen = (string)choices[Component.Zapret].SelectedItem;
             if (Confirm("Установить службу Windows для стратегии " + chosen + " и запускать её до входа в систему?"))
-                await session.RunSimple("Установка службы", () => Maintenance.InstallService(chosen));
+                await session.RunSimple("Установка службы", () => AdminOperations.Invoke("service-install", chosen));
         }, false, () => Components.Installed(Component.Zapret) && choices[Component.Zapret].SelectedItem != null);
         Button(tools, "Удалить службу", async () =>
         {
             if (Confirm("Остановить и удалить службу zapret этой установки?"))
-                await session.RunSimple("Удаление службы", ZapService.Remove);
+                await session.RunSimple("Удаление службы", () => AdminOperations.Invoke("service-remove"));
         }, false, () => ZapService.Ours(ZapService.Image));
         Button(tools, "Обновить hosts", async () =>
         {
-            if (Confirm("Добавить в системный hosts адреса из списка Flowseal? Перед записью будет создана резервная копия."))
-                await session.RunSimple("Обновление hosts", Maintenance.Hosts);
+            string source = null;
+            session.LastError = "";
+            if (!await session.Run("Загрузка списка hosts", t => source = Maintenance.HostsSource()))
+                return;
+            if (Review("Обновление hosts", "Проверь блок Flowseal перед записью. Панель сохранит резервную копию.", "Применить", "Отмена", source))
+                await session.RunSimple("Обновление hosts", () => AdminOperations.Invoke("hosts", Disk.Token(Disk.Utf8.GetBytes(source))));
         });
+        Button(tools, "Восстановить hosts", async () =>
+        {
+            if (Confirm("Убрать из hosts блок Flowseal, добавленный zapretgui? Остальные записи будут сохранены."))
+                await session.RunSimple("Восстановление hosts", () => AdminOperations.Invoke("hosts-restore"));
+        }, false, Maintenance.CanRestoreHosts);
         Button(tools, "Включить TCP timestamps", async () =>
         {
             if (Confirm("Включить TCP timestamps в сетевых настройках Windows?"))
-                await session.RunSimple("TCP timestamps", ServiceTools.TcpTimestamps);
+                await session.RunSimple("TCP timestamps", () => AdminOperations.Invoke("timestamps"));
         });
         Button(tools, "Очистить кэш Discord", async () =>
         {
@@ -203,12 +225,26 @@ internal sealed partial class Shell
         var recovery = Actions(maintenance);
         conflict = Pick(recovery, 170);
         Enable(conflict);
-        Button(recovery, "Удалить выбранную службу", async () =>
+        Button(recovery, "Остановить выбранную службу", async () =>
         {
             string service = (string)conflict.SelectedItem;
-            if (service != null && Confirm("Остановить и удалить из Windows службу " + service + "? Программе, которая ею пользуется, может понадобиться переустановка."))
-                await session.RunSimple("Удаление службы " + service, () => ServiceTools.Remove(service));
+            if (service != null && Confirm("Временно остановить службу " + service + "? Её можно снова запустить из панели."))
+                await session.RunSimple("Остановка службы " + service, () => AdminOperations.Invoke("service-stop", service));
         }, false, () => conflict.SelectedItem != null);
+        Button(recovery, "Запустить выбранную службу", () =>
+        {
+            string service = (string)conflict.SelectedItem;
+            return session.RunSimple("Запуск службы " + service, () => AdminOperations.Invoke("service-start", service));
+        }, false, () => conflict.SelectedItem != null);
+        Row(maintenance, Label("WinDivert отображается в диагностике. Его могут использовать другие приложения.", 12, false, true));
+    }
+
+    private void InstallComponent(Component component)
+    {
+        if (component == Component.Zapret)
+            AdminOperations.Invoke("install", new string[0], System.Threading.CancellationToken.None, session.Log, null, null);
+        else
+            Downloads.Install(component, session.Log);
     }
 
     private void Bypass(StackPanel page)
@@ -235,7 +271,7 @@ internal sealed partial class Shell
             session.LastError = "";
             if (Dirty && !Confirm("Сменить режим и перечитать список? Несохранённые правки будут потеряны."))
                 return;
-            if (await session.Run("Применение фильтров", t => AddressLists.Filters(g, mode)))
+            if (await session.Run("Применение фильтров", t => AdminOperations.Invoke("filters", g.Mode, g.Tcp, g.Udp, mode)))
             {
                 filtersDirty = false;
                 session.Record("Фильтры применены.");
@@ -279,7 +315,7 @@ internal sealed partial class Shell
             if (Dirty && list.Name == AddressLists.Names[2] && !Confirm("Обновить IPSet и отбросить несохранённые правки этого списка?"))
                 return;
             session.LastError = "";
-            if (await session.Run("Обновление IPSet", t => AddressLists.Update()))
+            if (await session.Run("Обновление IPSet", t => AdminOperations.Invoke("ipset")))
             {
                 session.Record("IPSet обновлён.");
                 if (list != null && list.Name == AddressLists.Names[2])
@@ -307,7 +343,7 @@ internal sealed partial class Shell
             var edit = list;
             string next = editor.Text;
             session.LastError = "";
-            if (await session.Run("Сохранение списка", t => AddressLists.Save(edit, next)))
+            if (await session.Run("Сохранение списка", t => AdminOperations.Invoke("list", edit.Name, edit.Token, next)))
             {
                 await ReadList(edit.Name);
                 session.Record("Список сохранён.");
@@ -358,7 +394,7 @@ internal sealed partial class Shell
         {
             bool discord = fileType.SelectedIndex == 0;
             string name = (string)fake.SelectedItem;
-            return session.RunSimple("Замена шаблона UDP", () => Maintenance.ReplaceSample(name, discord));
+            return session.RunSimple("Замена шаблона UDP", () => AdminOperations.Invoke("sample", name, discord ? "discord" : "game"));
         }, false, () => fake.SelectedItem != null);
     }
 
@@ -427,7 +463,7 @@ internal sealed partial class Shell
         {
             await session.RunSimple("Автозапуск", () =>
             {
-                NativeSetup.SetAutoStart(value);
+                AdminOperations.Invoke("autostart", value ? "on" : "off");
                 session.AutoStart = NativeSetup.AutoStartEnabled();
             });
             Refresh();
@@ -451,7 +487,7 @@ internal sealed partial class Shell
             UpdateFile file = null;
             session.LastError = "";
             updateNote.Text = "Проверка версии на GitHub…";
-            if (await session.Run("Поиск обновления приложения", t => file = Downloads.App()))
+            if (await session.Run("Поиск обновления приложения", t => file = Downloads.App(false)))
             {
                 if (file == null)
                 {
@@ -461,7 +497,7 @@ internal sealed partial class Shell
                 else
                 {
                     updateNote.Text = "Установка версии " + file.Version + "…";
-                    host.FinishUpdate(file);
+                    host.FinishUpdate();
                 }
             }
             else
@@ -470,10 +506,7 @@ internal sealed partial class Shell
         Row(update, updateNote);
         checkZap = Toggle(update, "Проверять обновления zapret при запуске", value =>
         {
-            if (value)
-                Disk.Write(Maintenance.UpdateFlag, Disk.Utf8.GetBytes("ENABLED\r\n"));
-            else
-                File.Delete(Maintenance.UpdateFlag);
+            Disk.OptionSet("CheckZapretUpdates", value);
             return Task.FromResult(0);
         }, () => Components.Installed(Component.Zapret));
         var proxy = Card(page, "TG WS Proxy");

@@ -25,28 +25,36 @@ internal static class ServiceTools
         return Known.Where(n => Registry.GetValue(@"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\" + n, "ImagePath", null) != null).ToArray();
     }
 
-    internal static void Remove(string name)
+    internal static string[] ManageableConflicts()
     {
-        if (!Known.Contains(name) || !Conflicts().Contains(name))
-            throw new IOException("Выбери установленную службу.");
-        if (name.StartsWith("WinDivert") && (Processes.Running(Paths.ZapExe) || Processes.Other(Paths.ZapExe)))
-            throw new IOException("Сначала останови winws перед удалением драйвера.");
-        using (var s = new ServiceController(name))
-        {
-            if (s.Status != ServiceControllerStatus.Stopped)
-            {
-                if (s.Status != ServiceControllerStatus.StopPending)
-                    s.Stop();
-                s.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(15));
-            }
-        }
+        return Conflicts().Where(name => !name.StartsWith("WinDivert", StringComparison.OrdinalIgnoreCase)).ToArray();
+    }
 
-        using (var p = Processes.Launch(Path.Combine(Environment.SystemDirectory, "sc.exe"), "delete " + name, Environment.SystemDirectory))
+    internal static void SetConflictRunning(string name, bool running)
+    {
+        if (!ManageableConflicts().Contains(name))
+            throw new IOException("Выбери установленную службу. WinDivert доступен только для диагностики.");
+        using (var service = new ServiceController(name))
         {
-            if (!p.WaitForExit(15000))
-                throw new System.TimeoutException();
-            if (p.ExitCode != 0)
-                throw new Win32Exception(p.ExitCode);
+            var target = running ? ServiceControllerStatus.Running : ServiceControllerStatus.Stopped;
+            var pending = running ? ServiceControllerStatus.StartPending : ServiceControllerStatus.StopPending;
+            if (service.Status == target) return;
+            if (service.Status != pending)
+            {
+                if (running) service.Start();
+                else
+                {
+                    var dependent = service.DependentServices;
+                    try
+                    {
+                        if (dependent.Any(item => item.Status != ServiceControllerStatus.Stopped))
+                            throw new IOException("От этой службы зависят другие запущенные службы Windows.");
+                    }
+                    finally { foreach (var item in dependent) item.Dispose(); }
+                    service.Stop();
+                }
+            }
+            service.WaitForStatus(target, TimeSpan.FromSeconds(15));
         }
     }
 
@@ -102,80 +110,56 @@ internal static class ServiceTools
         }
     }
 
-    [DllImport("advapi32.dll", SetLastError = true)]
-    private static extern bool GetTokenInformation(IntPtr token, int type, out IntPtr data, int size, out int written);
-    [DllImport("kernel32.dll")]
-    private static extern bool CloseHandle(IntPtr h);
     internal static void ClearDiscordCache(Action<string> log)
     {
-        // AppData belongs to the interactive user. Walk it only with the linked, non-elevated token.
-        using (var admin = WindowsIdentity.GetCurrent())
+        var basePath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+        int removed = 0;
+        foreach (var edition in new[]
         {
-            IntPtr token;
-            int length;
-            if (!GetTokenInformation(admin.Token, 19, out token, IntPtr.Size, out length))
-                throw new Win32Exception(Marshal.GetLastWin32Error());
+            "discord",
+            "discordptb",
+            "discordcanary",
+            "discorddevelopment"
+        }
+
+        )
+        {
+            string folder = Path.Combine(basePath, edition);
+            if (!Directory.Exists(folder))
+                continue;
+            var processes = Process.GetProcessesByName(edition);
             try
             {
-                using (WindowsIdentity.Impersonate(token))
-                {
-                    if (new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator))
-                        throw new IOException("Нужен обычный токен пользователя для очистки кэша.");
-                    var basePath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-                    int removed = 0;
-                    foreach (var edition in new[]
-                    {
-                        "discord",
-                        "discordptb",
-                        "discordcanary",
-                        "discorddevelopment"
-                    }
-
-                    )
-                    {
-                        string folder = Path.Combine(basePath, edition);
-                        if (!Directory.Exists(folder))
-                            continue;
-                        var processes = Process.GetProcessesByName(edition);
-                        try
-                        {
-                            if (processes.Length != 0)
-                                throw new IOException("Закрой " + edition + " перед очисткой кэша.");
-                        }
-                        finally
-                        {
-                            foreach (var p in processes)
-                                p.Dispose();
-                        }
-
-                        if ((File.GetAttributes(folder) & FileAttributes.ReparsePoint) != 0)
-                            throw new IOException("Папка Discord является ссылкой.");
-                        foreach (var cache in new[]
-                        {
-                            "Cache",
-                            "Code Cache",
-                            "GPUCache"
-                        }
-
-                        )
-                        {
-                            var path = Path.Combine(folder, cache);
-                            if (!Directory.Exists(path))
-                                continue;
-                            if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
-                                throw new IOException("Папка кэша является ссылкой.");
-                            Directory.Delete(path, true);
-                            removed++;
-                        }
-                    }
-
-                    log("Удалено папок кэша Discord: " + removed);
-                }
+                if (processes.Length != 0)
+                    throw new IOException("Закрой " + edition + " перед очисткой кэша.");
             }
             finally
             {
-                CloseHandle(token);
+                foreach (var p in processes)
+                    p.Dispose();
+            }
+
+            if ((File.GetAttributes(folder) & FileAttributes.ReparsePoint) != 0)
+                throw new IOException("Папка Discord является ссылкой.");
+            foreach (var cache in new[]
+            {
+                "Cache",
+                "Code Cache",
+                "GPUCache"
+            }
+
+            )
+            {
+                var path = Path.Combine(folder, cache);
+                if (!Directory.Exists(path))
+                    continue;
+                if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+                    throw new IOException("Папка кэша является ссылкой.");
+                Directory.Delete(path, true);
+                removed++;
             }
         }
+
+        log("Удалено папок кэша Discord: " + removed);
     }
 }

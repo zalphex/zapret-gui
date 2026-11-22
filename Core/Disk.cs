@@ -9,7 +9,7 @@ using Microsoft.Win32;
 
 internal static class Paths
 {
-    internal const string Version = "2.0.0";
+    internal const string Version = "2.1.0";
 #if ISOLATED_TESTS
     internal static readonly string Root = Path.Combine(Path.GetTempPath(), "zapretgui-tests-" + Guid.NewGuid().ToString("N"));
 #else
@@ -21,7 +21,14 @@ internal static class Paths
     internal static readonly string Lists = Path.Combine(Zap, "lists");
     internal static readonly string Utils = Path.Combine(Zap, "utils");
     internal static readonly string ZapExe = Path.Combine(Bin, "winws.exe");
-    internal static readonly string Tg = Path.Combine(Root, "TG");
+#if ISOLATED_TESTS
+    internal static readonly string UserRoot = Root;
+#else
+    internal static readonly string UserRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "zapretgui");
+#endif
+    internal static readonly string LegacyTg = Path.Combine(Root, "TG");
+    internal static readonly string Tg = Path.Combine(UserRoot, "TG");
+    internal static readonly string UpdateWorker = Path.Combine(Desktop, "update-worker-" + Version + ".exe");
     internal static readonly string TgExe = Path.Combine(Tg, "TgWsProxy_windows.exe");
     internal static readonly string TgData = Path.Combine(Tg, "TgWsProxy_data");
     internal static readonly string Config = Path.Combine(TgData, "config.json");
@@ -137,12 +144,20 @@ internal static class Disk
 
     internal static string State(string key, string fallback = "")
     {
+        if (key.StartsWith("TG", StringComparison.Ordinal))
+        {
+            string value = Get(ReadJson(Path.Combine(Paths.UserRoot, "user-state.json")), key);
+            if (value.Length != 0)
+                return value;
+        }
         return Get(ReadJson(Path.Combine(Paths.Root, "state.json")), key, fallback);
     }
 
     internal static void Remember(string key, string value)
     {
-        string file = Path.Combine(Paths.Root, "state.json");
+        string file = key.StartsWith("TG", StringComparison.Ordinal)
+            ? Path.Combine(Paths.UserRoot, "user-state.json")
+            : Path.Combine(Paths.Root, "state.json");
         var obj = ReadJson(file);
         obj[key] = value;
         Json(file, obj);

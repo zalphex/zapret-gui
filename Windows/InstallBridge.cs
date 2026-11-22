@@ -56,36 +56,82 @@ internal static class NativeSetup
         return task != null && task.Enabled;
     }
 
-    internal static void SetAutoStart(bool enabled)
+    internal static void SetAutoStart(bool enabled, string sid)
     {
-        dynamic service = ScheduledTasks();
-        dynamic folder = service.GetFolder("\\");
-        string name = TaskName();
+        var user = new SecurityIdentifier(sid);
+        dynamic scheduler = ScheduledTasks();
+        dynamic folder = scheduler.GetFolder("\\");
+        string name = TaskPrefix + user.Value;
         if (!enabled)
         {
-            if (FindTask(folder, name) != null)
-                folder.DeleteTask(name, 0);
+            DeleteTask(folder, name + "-system");
+            DeleteTask(folder, name);
             return;
         }
 
-        if (!File.Exists(TrayPath))
-            throw new FileNotFoundException("Установи zapretgui через установщик.");
-        string user;
-        using (var identity = WindowsIdentity.GetCurrent())
-            user = identity.Name;
-        dynamic task = service.NewTask(0);
-        task.Principal.UserId = user;
-        task.Principal.LogonType = InteractiveToken;
-        task.Principal.RunLevel = 1;
+        dynamic previous = FindTask(folder, name);
+        dynamic previousDefinition = previous == null ? null : previous.Definition;
+        RegisterTray(scheduler, folder, name, user.Value, true);
+        try
+        {
+            RegisterZap(scheduler, folder, name, user.Value, true);
+        }
+        catch
+        {
+            if (previousDefinition == null)
+                DeleteTask(folder, name);
+            else
+                folder.RegisterTaskDefinition(name, previousDefinition, CreateOrUpdate, previousDefinition.Principal.UserId, null, InteractiveToken, null);
+            throw;
+        }
+    }
+
+    private static void DeleteTask(dynamic folder, string name)
+    {
+        if (FindTask(folder, name) != null)
+            folder.DeleteTask(name, 0);
+    }
+
+    private static dynamic LogonTask(dynamic scheduler, string user, bool enabled)
+    {
+        dynamic task = scheduler.NewTask(0);
+        task.Settings.Enabled = enabled;
         task.Settings.DisallowStartIfOnBatteries = false;
         task.Settings.StopIfGoingOnBatteries = false;
         task.Settings.ExecutionTimeLimit = "PT0S";
         dynamic trigger = task.Triggers.Create(9);
         trigger.UserId = user;
+        return task;
+    }
+
+    private static void RegisterTray(dynamic scheduler, dynamic folder, string name, string user, bool enabled)
+    {
+        dynamic task = LogonTask(scheduler, user, enabled);
+        task.Principal.UserId = user;
+        task.Principal.LogonType = InteractiveToken;
+        task.Principal.RunLevel = 0;
         dynamic action = task.Actions.Create(0);
         action.Path = TrayPath;
         action.WorkingDirectory = Paths.Desktop;
         folder.RegisterTaskDefinition(name, task, CreateOrUpdate, user, null, InteractiveToken, null);
+    }
+
+    private static void RegisterZap(dynamic scheduler, dynamic folder, string name, string user, bool enabled)
+    {
+        const string system = "S-1-5-18";
+        const int serviceAccount = 5;
+        dynamic task = LogonTask(scheduler, user, enabled);
+        task.Principal.UserId = system;
+        task.Principal.LogonType = serviceAccount;
+        task.Settings.ExecutionTimeLimit = "PT2M";
+        dynamic action = task.Actions.Create(0);
+        action.Path = Path.Combine(Paths.Desktop, Launcher);
+        action.Arguments = "--scheduled-zap";
+        action.WorkingDirectory = Paths.Desktop;
+        const int dontAddPrincipalAce = 16;
+        const string systemTaskSecurity = "D:P(A;;FA;;;SY)(A;;FA;;;BA)";
+        folder.RegisterTaskDefinition(name + "-system", task, CreateOrUpdate | dontAddPrincipalAce,
+            system, null, serviceAccount, systemTaskSecurity);
     }
 
     private static bool IsLegacyTask(dynamic action, string legacy)
@@ -158,17 +204,22 @@ internal static class NativeSetup
             if ((int)definition.Actions.Count != 1 || (int)definition.Actions.Item(1).Type != 0)
                 continue;
             dynamic action = definition.Actions.Item(1);
-            if (!IsLegacyTask(action, legacy))
+            if ((!Same((string)action.Path, TrayPath) || (int)definition.Principal.RunLevel == 0) && !IsLegacyTask(action, legacy))
                 continue;
+            SecurityIdentifier user;
+            try { user = new SecurityIdentifier(name.Substring(TaskPrefix.Length)); }
+            catch (ArgumentException) { continue; }
+            if (!Same((string)definition.Principal.UserId, user.Value))
+            {
+                var account = new NTAccount((string)definition.Principal.UserId);
+                if (!user.Equals(account.Translate(typeof(SecurityIdentifier)))) continue;
+            }
             bool enabled = task.Enabled;
-            action.Path = TrayPath;
-            action.Arguments = "";
-            action.WorkingDirectory = Paths.Desktop;
-            definition.Settings.Enabled = enabled;
-            definition.Settings.ExecutionTimeLimit = "PT0S";
-            folder.RegisterTaskDefinition(name, definition, CreateOrUpdate, definition.Principal.UserId, null, InteractiveToken, null);
+            RegisterZap(service, folder, name, user.Value, enabled);
+            RegisterTray(service, folder, name, user.Value, enabled);
         }
 
+        Processes.Stop(Path.Combine(Paths.LegacyTg, "TgWsProxy_windows.exe"));
         Processes.Stop(Path.Combine(legacy, @"Zapret\bin\winws.exe"));
         Processes.Stop(Path.Combine(legacy, @"TG\TgWsProxy_windows.exe"));
     }
@@ -185,8 +236,10 @@ internal static class NativeSetup
                 continue;
             foreach (dynamic action in task.Definition.Actions)
             {
-                if (action.Type != 0 || !(Same((string)action.Path, TrayPath) || IsLegacyTask(action, legacy)))
-                    continue;
+                if ((int)action.Type != 0) continue;
+                bool starter = name.EndsWith("-system", StringComparison.OrdinalIgnoreCase) &&
+                    Same((string)action.Path, Path.Combine(Paths.Desktop, Launcher)) && (string)action.Arguments == "--scheduled-zap";
+                if (!(starter || Same((string)action.Path, TrayPath) || IsLegacyTask(action, legacy))) continue;
                 folder.DeleteTask(name, 0);
                 break;
             }
@@ -196,16 +249,19 @@ internal static class NativeSetup
             ZapService.Remove();
         Processes.Stop(Paths.ZapExe);
         Processes.Stop(Paths.TgExe);
+        Processes.Stop(Path.Combine(Paths.LegacyTg, "TgWsProxy_windows.exe"));
+        if (Maintenance.CanRestoreHosts())
+            Maintenance.RestoreHosts();
         CleanUpdateRunners();
     }
 
     internal static void CleanUpdateRunners()
     {
-        foreach (string path in Directory.GetFiles(Paths.Desktop, "update-run-*.exe"))
+        foreach (string path in Directory.GetFiles(Paths.Desktop, "update-*.exe"))
         {
             try
             {
-                File.Delete(path);
+                if (!Same(path, Paths.UpdateWorker)) File.Delete(path);
             }
             catch (IOException)
             {
@@ -216,66 +272,22 @@ internal static class NativeSetup
         }
     }
 
-    internal static void QueueUpdate(string path, string hash)
+    private static void InstallUpdate()
     {
-        CheckUpdatePath(path, hash);
-        string runner = Path.Combine(Paths.Desktop, "update-run-" + Guid.NewGuid().ToString("N") + ".exe");
-        File.Copy(Path.Combine(Paths.Desktop, Launcher), runner);
+        var update = Downloads.App();
+        if (update == null) return;
         try
         {
-            using (var current = Process.GetCurrentProcess())
-            using (Process.Start(new ProcessStartInfo(runner, "--setup update " + current.Id + " \"" + path + "\" " + hash) { UseShellExecute = false }))
-            {
-            }
-        }
-        catch
-        {
-            File.Delete(runner);
-            throw;
-        }
-    }
-
-    private static void CheckUpdatePath(string path, string hash)
-    {
-        if (!Same(Path.GetDirectoryName(Path.GetFullPath(path)), Paths.Desktop) || !Regex.IsMatch(Path.GetFileName(path), @"\Aupdate-[0-9a-f]{32}\.exe\z") || !Regex.IsMatch(hash, @"\A[0-9a-fA-F]{64}\z"))
-            throw new InvalidOperationException("Некорректный путь к обновлению.");
-    }
-
-    private static void InstallUpdate(int pid, string path, string hash)
-    {
-        CheckUpdatePath(path, hash);
-        try
-        {
-            Process parent;
-            try
-            {
-                parent = Process.GetProcessById(pid);
-            }
-            catch (ArgumentException)
-            {
-                parent = null;
-            }
-
-            using (parent)
-                if (parent != null && !parent.WaitForExit(30000))
-                    throw new TimeoutException("Приложение не закрылось.");
-            if (!Same(hash, Disk.Hash(path)))
+            if (!Same(update.Hash, Disk.Hash(update.Path)))
                 throw new InvalidDataException("Скачанный установщик изменился.");
-            using (var install = Process.Start(new ProcessStartInfo(path, "/S") { UseShellExecute = false }))
+            using (var installer = Processes.Launch(update.Path, "/S", Paths.Desktop))
             {
-                install.WaitForExit();
-                if (install.ExitCode != 0)
-                    throw new InvalidOperationException("Ошибка установки, код " + install.ExitCode + ".");
-            }
-
-            using (Process.Start(Path.Combine(Paths.Desktop, Launcher)))
-            {
+                installer.WaitForExit();
+                if (installer.ExitCode != 0)
+                    throw new IOException("Ошибка установки, код " + installer.ExitCode + ".");
             }
         }
-        finally
-        {
-            File.Delete(path);
-        }
+        finally { File.Delete(update.Path); }
     }
 
     internal static int Run(string[] args)
@@ -291,8 +303,8 @@ internal static class NativeSetup
             case "uninstall":
                 Uninstall();
                 break;
-            case "update":
-                InstallUpdate(Int32.Parse(args[2]), args[3], args[4]);
+            case "app-update":
+                InstallUpdate();
                 break;
             default:
                 throw new ArgumentException("Неизвестная команда установщика.");
