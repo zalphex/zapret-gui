@@ -25,36 +25,28 @@ internal static class ServiceTools
         return Known.Where(n => Registry.GetValue(@"HKEY_LOCAL_MACHINE\SYSTEM\CurrentControlSet\Services\" + n, "ImagePath", null) != null).ToArray();
     }
 
-    internal static string[] ManageableConflicts()
+    internal static void Remove(string name)
     {
-        return Conflicts().Where(name => !name.StartsWith("WinDivert", StringComparison.OrdinalIgnoreCase)).ToArray();
-    }
-
-    internal static void SetConflictRunning(string name, bool running)
-    {
-        if (!ManageableConflicts().Contains(name))
-            throw new IOException("Выбери установленную службу. WinDivert доступен только для диагностики.");
-        using (var service = new ServiceController(name))
+        if (!Known.Contains(name) || !Conflicts().Contains(name))
+            throw new IOException("Выбери установленную службу.");
+        if (name.StartsWith("WinDivert") && (Processes.Running(Paths.ZapExe) || Processes.Other(Paths.ZapExe)))
+            throw new IOException("Сначала останови winws перед удалением драйвера.");
+        using (var s = new ServiceController(name))
         {
-            var target = running ? ServiceControllerStatus.Running : ServiceControllerStatus.Stopped;
-            var pending = running ? ServiceControllerStatus.StartPending : ServiceControllerStatus.StopPending;
-            if (service.Status == target) return;
-            if (service.Status != pending)
+            if (s.Status != ServiceControllerStatus.Stopped)
             {
-                if (running) service.Start();
-                else
-                {
-                    var dependent = service.DependentServices;
-                    try
-                    {
-                        if (dependent.Any(item => item.Status != ServiceControllerStatus.Stopped))
-                            throw new IOException("От этой службы зависят другие запущенные службы Windows.");
-                    }
-                    finally { foreach (var item in dependent) item.Dispose(); }
-                    service.Stop();
-                }
+                if (s.Status != ServiceControllerStatus.StopPending)
+                    s.Stop();
+                s.WaitForStatus(ServiceControllerStatus.Stopped, TimeSpan.FromSeconds(15));
             }
-            service.WaitForStatus(target, TimeSpan.FromSeconds(15));
+        }
+
+        using (var p = Processes.Launch(Path.Combine(Environment.SystemDirectory, "sc.exe"), "delete " + name, Environment.SystemDirectory))
+        {
+            if (!p.WaitForExit(15000))
+                throw new System.TimeoutException();
+            if (p.ExitCode != 0)
+                throw new Win32Exception(p.ExitCode);
         }
     }
 

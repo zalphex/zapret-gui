@@ -255,7 +255,7 @@ internal sealed partial class Shell
             if (fake != null)
                 Fill(fake, Maintenance.Samples(), (string)fake.SelectedItem);
             if (conflict != null)
-                Fill(conflict, ServiceTools.ManageableConflicts(), (string)conflict.SelectedItem);
+                Fill(conflict, ServiceTools.Conflicts(), (string)conflict.SelectedItem);
             if (serviceState != null)
                 serviceState.Text = "Служба zapret · " + ZapService.Status("zapret");
             if (auto != null)
@@ -263,7 +263,7 @@ internal sealed partial class Shell
                 auto.IsChecked = session.AutoStart;
                 background.IsChecked = Disk.Option("StartInTray", true);
                 tray.IsChecked = Disk.Option("MinimizeToTray", true);
-                checkZap.IsChecked = Maintenance.CheckUpdates;
+                checkZap.IsChecked = File.Exists(Maintenance.UpdateFlag);
             }
 
             if (proxyDetail != null)

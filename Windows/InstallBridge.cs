@@ -1,7 +1,6 @@
 using System;
 using System.Diagnostics;
 using System.IO;
-using System.Collections.Generic;
 using System.Security.Principal;
 using System.Text.RegularExpressions;
 
@@ -104,12 +103,52 @@ internal static class NativeSetup
         return String.Equals(first, second, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static void UpdateStartupPath()
+    private static void Migrate()
     {
         string legacy = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "FlowPanel");
+        string marker = Path.Combine(Paths.Root, ".flowpanel-migrated");
+        if (Directory.Exists(legacy) && !File.Exists(marker))
+        {
+            foreach (string name in new[]
+            {
+                "Zapret",
+                "TG",
+                "state.json"
+            }
+
+            )
+            {
+                string old = Path.Combine(legacy, name), target = Path.Combine(Paths.Root, name);
+                if (File.Exists(target) || Directory.Exists(target))
+                    continue;
+                string temporary = target + "." + Guid.NewGuid().ToString("N") + ".migration";
+                try
+                {
+                    if (Directory.Exists(old))
+                    {
+                        Disk.CopyTree(old, temporary);
+                        Directory.Move(temporary, target);
+                    }
+                    else if (File.Exists(old))
+                    {
+                        File.Copy(old, temporary);
+                        File.Move(temporary, target);
+                    }
+                }
+                finally
+                {
+                    if (Directory.Exists(temporary))
+                        Directory.Delete(temporary, true);
+                    if (File.Exists(temporary))
+                        File.Delete(temporary);
+                }
+            }
+
+            File.WriteAllText(marker, "");
+        }
+
         dynamic service = ScheduledTasks();
         dynamic folder = service.GetFolder("\\");
-        RemoveSplitStartup(folder);
         foreach (dynamic task in folder.GetTasks(1))
         {
             string name = task.Name;
@@ -119,10 +158,8 @@ internal static class NativeSetup
             if ((int)definition.Actions.Count != 1 || (int)definition.Actions.Item(1).Type != 0)
                 continue;
             dynamic action = definition.Actions.Item(1);
-            bool splitTray = Same((string)action.Path, TrayPath) && (int)definition.Principal.RunLevel == 0;
-            if (!splitTray && !IsLegacyTask(action, legacy) && !Same((string)action.Path, Path.Combine(InstallFolder.OldDesktop, TrayExecutable)) && !Same((string)action.Path, Path.Combine(InstallFolder.OldDesktop, Launcher)))
+            if (!IsLegacyTask(action, legacy))
                 continue;
-            definition.Principal.RunLevel = 1;
             bool enabled = task.Enabled;
             action.Path = TrayPath;
             action.Arguments = "";
@@ -132,23 +169,8 @@ internal static class NativeSetup
             folder.RegisterTaskDefinition(name, definition, CreateOrUpdate, definition.Principal.UserId, null, InteractiveToken, null);
         }
 
-    }
-
-    private static void RemoveSplitStartup(dynamic folder)
-    {
-        var names = new List<string>();
-        foreach (dynamic task in folder.GetTasks(1))
-        {
-            string name = task.Name;
-            if (!name.StartsWith(TaskPrefix, StringComparison.OrdinalIgnoreCase) ||
-                !name.EndsWith("-system", StringComparison.OrdinalIgnoreCase)) continue;
-            dynamic actions = task.Definition.Actions;
-            if ((int)actions.Count != 1) continue;
-            dynamic action = actions.Item(1);
-            if ((int)action.Type == 0 && (Same((string)action.Path, Path.Combine(Paths.Desktop, Launcher)) || Same((string)action.Path, Path.Combine(InstallFolder.OldDesktop, Launcher))) &&
-                (string)action.Arguments == "--scheduled-zap") names.Add(name);
-        }
-        foreach (string name in names) folder.DeleteTask(name, 0);
+        Processes.Stop(Path.Combine(legacy, @"Zapret\bin\winws.exe"));
+        Processes.Stop(Path.Combine(legacy, @"TG\TgWsProxy_windows.exe"));
     }
 
     private static void Uninstall()
@@ -172,8 +194,6 @@ internal static class NativeSetup
 
         if (ZapService.Ours(ZapService.Image))
             ZapService.Remove();
-        if (Maintenance.CanRestoreHosts())
-            Maintenance.RestoreHosts();
         Processes.Stop(Paths.ZapExe);
         Processes.Stop(Paths.TgExe);
         CleanUpdateRunners();
@@ -181,9 +201,7 @@ internal static class NativeSetup
 
     internal static void CleanUpdateRunners()
     {
-        foreach (string path in System.Linq.Enumerable.Concat(
-            Directory.GetFiles(Paths.Desktop, "update-run-*.exe"),
-            Directory.GetFiles(Paths.Desktop, "update-worker-*.exe")))
+        foreach (string path in Directory.GetFiles(Paths.Desktop, "update-run-*.exe"))
         {
             try
             {
@@ -264,11 +282,8 @@ internal static class NativeSetup
     {
         switch (args[1])
         {
-            case "prepare":
-                InstallFolder.Prepare(args[2]);
-                break;
-            case "startup-path":
-                UpdateStartupPath();
+            case "migrate":
+                Migrate();
                 break;
             case "shortcut":
                 ZapretTaskbarIdentity.SetShortcut(args[2]);

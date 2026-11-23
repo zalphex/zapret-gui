@@ -9,13 +9,13 @@ using Microsoft.Win32;
 
 internal static class Paths
 {
-    internal const string Version = "2.1.5";
+    internal const string Version = "2.0.0";
 #if ISOLATED_TESTS
     internal static readonly string Root = Path.Combine(Path.GetTempPath(), "zapretgui-tests-" + Guid.NewGuid().ToString("N"));
 #else
-    internal static readonly string Root = new DirectoryInfo(AppDomain.CurrentDomain.BaseDirectory).FullName.TrimEnd(Path.DirectorySeparatorChar);
+    internal static readonly string Root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "zapretgui");
 #endif
-    internal static readonly string Desktop = Root;
+    internal static readonly string Desktop = Path.Combine(Root, "Desktop");
     internal static readonly string Zap = Path.Combine(Root, "Zapret");
     internal static readonly string Bin = Path.Combine(Zap, "bin");
     internal static readonly string Lists = Path.Combine(Zap, "lists");

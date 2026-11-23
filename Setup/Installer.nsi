@@ -1,13 +1,13 @@
 Unicode True
 RequestExecutionLevel admin
 Name "zapretgui"
-!define VER "2.1.5"
+!define VER "2.0.0"
 !define KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\ZapretGUI"
-!define CORE "$INSTDIR\zapretgui.runtime"
-OutFile "..\bin\zapretgui-2.1.5-setup-x64.exe"
-InstallDir "$PROGRAMFILES64\zapretgui"
+!define CORE "$PROGRAMFILES64\zapretgui\Desktop"
+OutFile "..\bin\zapretgui-2.0.0-setup-x64.exe"
+InstallDir "${CORE}"
 SetCompressor /SOLID lzma
-VIProductVersion "2.1.5.0"
+VIProductVersion "2.0.0.0"
 VIAddVersionKey /LANG=1049 "ProductName" "zapretgui"
 VIAddVersionKey /LANG=1049 "FileDescription" "Установщик zapretgui"
 VIAddVersionKey /LANG=1049 "FileVersion" "${VER}"
@@ -20,7 +20,7 @@ VIAddVersionKey /LANG=1049 "LegalCopyright" "zalphex"
 !define MUI_UNICON "..\Assets\zapretgui.ico"
 !define MUI_FINISHPAGE_RUN "${CORE}\zapretgui.exe"
 !define MUI_FINISHPAGE_RUN_TEXT "Открыть zapretgui"
-!define MUI_DIRECTORYPAGE_TEXT_TOP "Выбери папку приложения. Программа, конфиги zapret и TG WS Proxy будут храниться здесь, в подпапке zapretgui.runtime."
+!define MUI_DIRECTORYPAGE_TEXT_TOP "Выбери папку приложения. Утилиты, данные и копия для автозапуска хранятся в Program Files\zapretgui."
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
@@ -63,57 +63,55 @@ Function .onInit
   ${EndIf}
 FunctionEnd
 Function un.onInit
-  SetRegView 64
-  ReadRegStr $0 HKLM "${KEY}" "RuntimeRoot"
-  ${If} $0 != "$INSTDIR"
-    MessageBox MB_OK "Действующая установка находится в другой папке."
-    Abort
-  ${EndIf}
   !insertmacro CheckRunning
 FunctionEnd
 Section
   SetRegView 64
   SetShellVarContext all
   SetOverwrite on
-  InitPluginsDir
-  SetOutPath "$PLUGINSDIR"
-  File "/oname=prepare.exe" "..\bin\zapretgui.exe"
-  StrCpy $0 -1
-  ExecWait '"$PLUGINSDIR\prepare.exe" --setup prepare "${CORE}"' $0
-  ${If} $0 != 0
-    SetErrorLevel 1
-    Abort
-  ${EndIf}
   SetOutPath "${CORE}"
   File "/oname=zapretgui.exe" "..\bin\zapretgui.exe"
   File "/oname=zapretgui-tray.exe" "..\bin\zapretgui.exe"
   WriteUninstaller "${CORE}\Uninstall.exe"
   StrCpy $0 -1
-  ExecWait '"${CORE}\zapretgui.exe" --setup startup-path' $0
+  ExecWait '"${CORE}\zapretgui.exe" --setup migrate' $0
   ${If} $0 != 0
-    MessageBox MB_ICONSTOP|MB_OK "Не удалось обновить путь автозапуска."
+    MessageBox MB_ICONSTOP|MB_OK "Не удалось перенести настройки предыдущей установки."
     SetErrorLevel 1
     Abort
   ${EndIf}
+  SetOutPath "$INSTDIR"
+  ${If} "$INSTDIR" != "${CORE}"
+    File "/oname=zapretgui.exe" "..\bin\zapretgui.exe"
+  ${EndIf}
   CreateDirectory "$SMPROGRAMS\zapretgui"
-  CreateShortcut "$SMPROGRAMS\zapretgui\zapretgui.lnk" "${CORE}\zapretgui.exe" "" "${CORE}\zapretgui.exe"
+  CreateShortcut "$SMPROGRAMS\zapretgui\zapretgui.lnk" "$INSTDIR\zapretgui.exe" "" "$INSTDIR\zapretgui.exe"
   ExecWait '"${CORE}\zapretgui.exe" --setup shortcut "$SMPROGRAMS\zapretgui\zapretgui.lnk"'
   WriteRegStr HKLM "${KEY}" "DisplayName" "zapretgui"
   WriteRegStr HKLM "${KEY}" "DisplayVersion" "${VER}"
   WriteRegStr HKLM "${KEY}" "Publisher" "zalphex"
-  WriteRegStr HKLM "${KEY}" "RuntimeRoot" "${CORE}"
   WriteRegStr HKLM "${KEY}" "InstallLocation" "$INSTDIR"
-  WriteRegStr HKLM "${KEY}" "DisplayIcon" "${CORE}\zapretgui.exe"
+  WriteRegStr HKLM "${KEY}" "DisplayIcon" "$INSTDIR\zapretgui.exe"
   WriteRegStr HKLM "${KEY}" "UninstallString" '"${CORE}\Uninstall.exe"'
   WriteRegDWORD HKLM "${KEY}" "NoModify" 1
   WriteRegDWORD HKLM "${KEY}" "NoRepair" 1
+  ; Retire scripts owned by previous zapretgui versions in the managed directory.
+  Delete "${CORE}\FlowPanel.ps1"
+  Delete "${CORE}\Settings.ps1"
+  Delete "${CORE}\PanelWorker.ps1"
+  Delete "${CORE}\AutoStart.ps1"
+  Delete "${CORE}\AppUpdate.ps1"
+  Delete "${CORE}\Engine.ps1"
+  Delete "${CORE}\Migrate.ps1"
+  Delete "${CORE}\RegisterShortcut.ps1"
+  Delete "${CORE}\Uninstall.ps1"
 SectionEnd
 Section Uninstall
   SetRegView 64
   SetShellVarContext all
   ReadRegStr $Previous HKLM "${KEY}" "InstallLocation"
   StrCpy $0 -1
-  ExecWait '"$INSTDIR\zapretgui.exe" --setup uninstall' $0
+  ExecWait '"${CORE}\zapretgui.exe" --setup uninstall' $0
   ${If} $0 != 0
     MessageBox MB_ICONSTOP|MB_OK "Не удалось остановить компоненты. Удаление прервано."
     SetErrorLevel 1
@@ -121,9 +119,14 @@ Section Uninstall
   ${EndIf}
   Delete "$SMPROGRAMS\zapretgui\zapretgui.lnk"
   RMDir "$SMPROGRAMS\zapretgui"
-  Delete "$INSTDIR\zapretgui.exe"
-  Delete "$INSTDIR\zapretgui-tray.exe"
-  Delete "$INSTDIR\Uninstall.exe"
-  RMDir "$INSTDIR"
+  ${If} $Previous != ""
+  ${AndIf} $Previous != "${CORE}"
+    Delete "$Previous\zapretgui.exe"
+    RMDir "$Previous"
+  ${EndIf}
+  Delete "${CORE}\zapretgui.exe"
+  Delete "${CORE}\zapretgui-tray.exe"
+  Delete "${CORE}\Uninstall.exe"
+  RMDir "${CORE}"
   DeleteRegKey HKLM "${KEY}"
 SectionEnd

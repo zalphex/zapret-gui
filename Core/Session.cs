@@ -127,7 +127,7 @@ internal sealed class Session
         Parallel.For(0, Checks.Services.Length, Measure);
     }
 
-    internal async Task Test(Component c, bool apply, Func<string, bool> confirm = null)
+    internal async Task Test(Component c, bool apply)
     {
         string winner = null;
         LastError = "";
@@ -137,16 +137,10 @@ internal sealed class Session
             {
                 Activity = Components.Title(c) + " · " + i + " / " + n + " · " + s;
                 Notify();
-            }), c == Component.Zapret && apply ? new Func<string, bool>(name =>
-            {
-                bool accepted = false;
-                ui.Send(_ => { if (!token.IsCancellationRequested && confirm != null) accepted = confirm(name); }, null);
-                return accepted && !token.IsCancellationRequested;
-            }) : null);
+            }));
         }, true))
         {
-            if (!string.IsNullOrEmpty(winner))
-                Winners[c] = winner;
+            Winners[c] = winner;
             var ev = Finished;
             if (ev != null)
                 ev();
@@ -183,7 +177,7 @@ internal sealed class Session
 
             if (visible)
                 MeasureAll();
-            if (Maintenance.CheckUpdates)
+            if (File.Exists(Maintenance.UpdateFlag))
                 try
                 {
                     string v = Downloads.Latest(Component.Zapret).Version;

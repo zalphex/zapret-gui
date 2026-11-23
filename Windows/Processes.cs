@@ -154,13 +154,7 @@ internal static class ZapService
 
     internal static void Stop()
     {
-        StopOwned(Paths.ZapExe);
-    }
-
-    internal static void StopOwned(string exe)
-    {
-        string image = Image;
-        if (image == null || !image.StartsWith("\"" + exe + "\" ", StringComparison.OrdinalIgnoreCase))
+        if (!Ours(Image))
             return;
         using (var sc = new ServiceController("zapret"))
         {
@@ -229,16 +223,6 @@ internal static class ZapService
             if (p.ExitCode != 0)
                 throw new Win32Exception(p.ExitCode);
         }
-    }
-
-    internal static void Relocate(string oldExe, string image, string oldRoot)
-    {
-        if (Image != image || !image.StartsWith(Quote(oldExe) + " ", StringComparison.OrdinalIgnoreCase))
-            throw new IOException("Путь службы zapret изменился во время переноса.");
-        string updated = System.Text.RegularExpressions.Regex.Replace(image,
-            System.Text.RegularExpressions.Regex.Escape(oldRoot + Path.DirectorySeparatorChar),
-            match => Paths.Root + Path.DirectorySeparatorChar, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
-        Sc("config zapret binPath= " + Quote(updated));
     }
 
     internal static void SetImage(string image)

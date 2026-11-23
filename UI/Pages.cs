@@ -146,7 +146,7 @@ internal sealed partial class Shell
             Job(row, "Скачать", () => Downloads.Install(c, session.Log));
             var tests = Actions(card);
             Button(tests, "Проверить конфиги", () => session.Test(c, false), false, installed);
-            Button(tests, "Автовыбор и запуск", () => session.Test(c, true, ConfirmStrategy), false, installed);
+            Button(tests, "Автовыбор и запуск", () => session.Test(c, true), false, installed);
             Job(tests, "Перезапустить", () =>
             {
                 Components.Stop(c);
@@ -187,18 +187,9 @@ internal sealed partial class Shell
         }, false, () => ZapService.Ours(ZapService.Image));
         Button(tools, "Обновить hosts", async () =>
         {
-            string source = null;
-            session.LastError = "";
-            if (!await session.Run("Загрузка списка hosts", t => source = Maintenance.HostsSource()))
-                return;
-            if (Review("Обновление hosts", "Проверь блок Flowseal перед записью. Панель сохранит резервную копию.", "Применить", "Отмена", source))
-                await session.RunSimple("Обновление hosts", () => Maintenance.Hosts(Disk.Token(Disk.Utf8.GetBytes(source))));
+            if (Confirm("Добавить в системный hosts адреса из списка Flowseal? Перед записью будет создана резервная копия."))
+                await session.RunSimple("Обновление hosts", Maintenance.Hosts);
         });
-        Button(tools, "Восстановить hosts", async () =>
-        {
-            if (Confirm("Убрать из hosts блок Flowseal, добавленный zapretgui? Остальные записи будут сохранены."))
-                await session.RunSimple("Восстановление hosts", Maintenance.RestoreHosts);
-        }, false, Maintenance.CanRestoreHosts);
         Button(tools, "Включить TCP timestamps", async () =>
         {
             if (Confirm("Включить TCP timestamps в сетевых настройках Windows?"))
@@ -212,18 +203,12 @@ internal sealed partial class Shell
         var recovery = Actions(maintenance);
         conflict = Pick(recovery, 170);
         Enable(conflict);
-        Button(recovery, "Остановить выбранную службу", async () =>
+        Button(recovery, "Удалить выбранную службу", async () =>
         {
             string service = (string)conflict.SelectedItem;
-            if (service != null && Confirm("Временно остановить службу " + service + "? Её можно снова запустить из панели."))
-                await session.RunSimple("Остановка службы " + service, () => ServiceTools.SetConflictRunning(service, false));
+            if (service != null && Confirm("Остановить и удалить из Windows службу " + service + "? Программе, которая ею пользуется, может понадобиться переустановка."))
+                await session.RunSimple("Удаление службы " + service, () => ServiceTools.Remove(service));
         }, false, () => conflict.SelectedItem != null);
-        Button(recovery, "Запустить выбранную службу", () =>
-        {
-            string service = (string)conflict.SelectedItem;
-            return session.RunSimple("Запуск службы " + service, () => ServiceTools.SetConflictRunning(service, true));
-        }, false, () => conflict.SelectedItem != null);
-        Row(maintenance, Label("WinDivert отображается в диагностике. Его могут использовать другие приложения.", 12, false, true));
     }
 
     private void Bypass(StackPanel page)
@@ -485,7 +470,10 @@ internal sealed partial class Shell
         Row(update, updateNote);
         checkZap = Toggle(update, "Проверять обновления zapret при запуске", value =>
         {
-            Disk.OptionSet("CheckZapretUpdates", value);
+            if (value)
+                Disk.Write(Maintenance.UpdateFlag, Disk.Utf8.GetBytes("ENABLED\r\n"));
+            else
+                File.Delete(Maintenance.UpdateFlag);
             return Task.FromResult(0);
         }, () => Components.Installed(Component.Zapret));
         var proxy = Card(page, "TG WS Proxy");

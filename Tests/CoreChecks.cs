@@ -179,11 +179,6 @@ internal static class CoreChecks
             Assert(Trial.Winner(new[] { new Trial { Name = "failed" } }) == null, "no false winner");
             var hosts = Maintenance.MergeHosts("127.0.0.1 local\r\n", "192.0.2.1 example.org");
             Assert(Maintenance.MergeHosts(hosts, "192.0.2.1 example.org") == hosts && hosts.Contains("127.0.0.1 local"), "idempotent hosts merge");
-            var laterEntry = "198.51.100.8 existing.example\n";
-            Assert(Maintenance.RemoveHostsBlock(hosts + laterEntry) == "127.0.0.1 local\r\n" + laterEntry,
-                "restore hosts while preserving later entries and line endings");
-            Assert(Maintenance.RemoveHostsBlock(laterEntry) == laterEntry, "restore hosts without a block is a no-op");
-            Reject(() => Maintenance.RemoveHostsBlock(hosts + hosts), "refuse to remove ambiguous hosts blocks");
             Reject(() => Maintenance.MergeHosts("# zapretgui: Flowseal hosts begin", "192.0.2.1 a.example"), "incomplete hosts block");
             ValidateArchive("bin/app.txt", true);
             ValidateArchive("../outside", false);
