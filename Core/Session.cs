@@ -133,20 +133,16 @@ internal sealed class Session
         LastError = "";
         if (await Run("Проверка конфигов " + Components.Title(c), token =>
         {
-            Action<int, int, string> progress = (i, n, name) => Post(() =>
+            winner = Checks.Test(c, apply, token, Log, (i, n, s) => Post(() =>
             {
-                Activity = Components.Title(c) + " · " + i + " / " + n + " · " + name;
+                Activity = Components.Title(c) + " · " + i + " / " + n + " · " + s;
                 Notify();
-            });
-            if (c == Component.Zapret)
-                winner = AdminOperations.Invoke("test", new[] { apply ? "preview" : "report" }, token, Log, progress, name =>
-                {
-                    bool accepted = false;
-                    ui.Send(_ => { if (confirm != null) accepted = confirm(name); }, null);
-                    return accepted;
-                });
-            else
-                winner = Checks.Test(c, apply, token, Log, progress);
+            }), c == Component.Zapret && apply ? new Func<string, bool>(name =>
+            {
+                bool accepted = false;
+                ui.Send(_ => { if (!token.IsCancellationRequested && confirm != null) accepted = confirm(name); }, null);
+                return accepted && !token.IsCancellationRequested;
+            }) : null);
         }, true))
         {
             if (!string.IsNullOrEmpty(winner))
@@ -157,27 +153,27 @@ internal sealed class Session
         }
     }
 
-    internal async Task Start(bool visible, bool scheduled)
+    internal async Task Start(bool visible)
     {
         await Run("Запуск компонентов", token =>
         {
-            try
+            try { NativeSetup.RestoreProxySettings(); }
+            catch (Exception ex) { Log("Перенос настроек прокси · " + ex.GetBaseException().Message); }
+
+            foreach (var c in Components.All)
             {
-                UserSession.MigrateProxy();
-                if (Components.Installed(Component.TG) && !Processes.Running(Paths.TgExe))
+                if (!Components.Installed(c) || Processes.Running(Paths.Binary(c)))
+                    continue;
+                try
                 {
-                    Components.Start(Component.TG, Components.Selected(Component.TG));
-                    Log("TG WS Proxy запущен.");
+                    Components.Start(c, Components.Selected(c));
+                    Log(Components.Title(c) + " запущен.");
+                }
+                catch (Exception ex)
+                {
+                    Log(Components.Title(c) + " · " + ex.GetBaseException().Message);
                 }
             }
-            catch (Exception ex) { Log("TG WS Proxy · " + ex.GetBaseException().Message); }
-
-            try
-            {
-                if (!scheduled && Components.Installed(Component.Zapret) && !Processes.Running(Paths.ZapExe))
-                    AdminOperations.Invoke("start");
-            }
-            catch (Exception ex) { Log("zapret · " + ex.GetBaseException().Message); }
 
             try
             {

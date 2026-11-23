@@ -135,10 +135,6 @@ internal static class Components
         Guard(c);
         if (c == Component.TG)
         {
-#if !ISOLATED_TESTS
-            if (AdminOperations.Elevated)
-                throw new InvalidOperationException("TG WS Proxy запускается из обычного окна zapretgui.");
-#endif
             ProxySettings.Ensure();
             int port = Convert.ToInt32(ProxySettings.Read()["port"]);
             if (IPGlobalProperties.GetIPGlobalProperties().GetActiveTcpListeners().Any(ep => ep.Port == port))

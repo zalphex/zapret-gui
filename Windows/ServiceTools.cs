@@ -110,56 +110,80 @@ internal static class ServiceTools
         }
     }
 
+    [DllImport("advapi32.dll", SetLastError = true)]
+    private static extern bool GetTokenInformation(IntPtr token, int type, out IntPtr data, int size, out int written);
+    [DllImport("kernel32.dll")]
+    private static extern bool CloseHandle(IntPtr h);
     internal static void ClearDiscordCache(Action<string> log)
     {
-        var basePath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
-        int removed = 0;
-        foreach (var edition in new[]
+        // AppData belongs to the interactive user. Walk it only with the linked, non-elevated token.
+        using (var admin = WindowsIdentity.GetCurrent())
         {
-            "discord",
-            "discordptb",
-            "discordcanary",
-            "discorddevelopment"
-        }
-
-        )
-        {
-            string folder = Path.Combine(basePath, edition);
-            if (!Directory.Exists(folder))
-                continue;
-            var processes = Process.GetProcessesByName(edition);
+            IntPtr token;
+            int length;
+            if (!GetTokenInformation(admin.Token, 19, out token, IntPtr.Size, out length))
+                throw new Win32Exception(Marshal.GetLastWin32Error());
             try
             {
-                if (processes.Length != 0)
-                    throw new IOException("Закрой " + edition + " перед очисткой кэша.");
+                using (WindowsIdentity.Impersonate(token))
+                {
+                    if (new WindowsPrincipal(WindowsIdentity.GetCurrent()).IsInRole(WindowsBuiltInRole.Administrator))
+                        throw new IOException("Нужен обычный токен пользователя для очистки кэша.");
+                    var basePath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+                    int removed = 0;
+                    foreach (var edition in new[]
+                    {
+                        "discord",
+                        "discordptb",
+                        "discordcanary",
+                        "discorddevelopment"
+                    }
+
+                    )
+                    {
+                        string folder = Path.Combine(basePath, edition);
+                        if (!Directory.Exists(folder))
+                            continue;
+                        var processes = Process.GetProcessesByName(edition);
+                        try
+                        {
+                            if (processes.Length != 0)
+                                throw new IOException("Закрой " + edition + " перед очисткой кэша.");
+                        }
+                        finally
+                        {
+                            foreach (var p in processes)
+                                p.Dispose();
+                        }
+
+                        if ((File.GetAttributes(folder) & FileAttributes.ReparsePoint) != 0)
+                            throw new IOException("Папка Discord является ссылкой.");
+                        foreach (var cache in new[]
+                        {
+                            "Cache",
+                            "Code Cache",
+                            "GPUCache"
+                        }
+
+                        )
+                        {
+                            var path = Path.Combine(folder, cache);
+                            if (!Directory.Exists(path))
+                                continue;
+                            if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
+                                throw new IOException("Папка кэша является ссылкой.");
+                            Directory.Delete(path, true);
+                            removed++;
+                        }
+                    }
+
+                    log("Удалено папок кэша Discord: " + removed);
+                }
             }
             finally
             {
-                foreach (var p in processes)
-                    p.Dispose();
-            }
-
-            if ((File.GetAttributes(folder) & FileAttributes.ReparsePoint) != 0)
-                throw new IOException("Папка Discord является ссылкой.");
-            foreach (var cache in new[]
-            {
-                "Cache",
-                "Code Cache",
-                "GPUCache"
-            }
-
-            )
-            {
-                var path = Path.Combine(folder, cache);
-                if (!Directory.Exists(path))
-                    continue;
-                if ((File.GetAttributes(path) & FileAttributes.ReparsePoint) != 0)
-                    throw new IOException("Папка кэша является ссылкой.");
-                Directory.Delete(path, true);
-                removed++;
+                CloseHandle(token);
             }
         }
-
-        log("Удалено папок кэша Discord: " + removed);
     }
 }

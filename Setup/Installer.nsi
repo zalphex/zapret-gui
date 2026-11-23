@@ -1,13 +1,13 @@
 Unicode True
 RequestExecutionLevel admin
 Name "zapretgui"
-!define VER "2.1.1"
+!define VER "2.1.2"
 !define KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\ZapretGUI"
 !define CORE "$PROGRAMFILES64\zapretgui\Desktop"
-OutFile "..\bin\zapretgui-2.1.1-setup-x64.exe"
+OutFile "..\bin\zapretgui-2.1.2-setup-x64.exe"
 InstallDir "${CORE}"
 SetCompressor /SOLID lzma
-VIProductVersion "2.1.1.0"
+VIProductVersion "2.1.2.0"
 VIAddVersionKey /LANG=1049 "ProductName" "zapretgui"
 VIAddVersionKey /LANG=1049 "FileDescription" "Установщик zapretgui"
 VIAddVersionKey /LANG=1049 "FileVersion" "${VER}"
@@ -72,7 +72,6 @@ Section
   SetOutPath "${CORE}"
   File "/oname=zapretgui.exe" "..\bin\zapretgui.exe"
   File "/oname=zapretgui-tray.exe" "..\bin\zapretgui.exe"
-  File "/oname=update-worker-${VER}.exe" "..\bin\zapretgui.exe"
   WriteUninstaller "${CORE}\Uninstall.exe"
   StrCpy $0 -1
   ExecWait '"${CORE}\zapretgui.exe" --setup migrate' $0
@@ -87,7 +86,6 @@ Section
   ${EndIf}
   CreateDirectory "$SMPROGRAMS\zapretgui"
   CreateShortcut "$SMPROGRAMS\zapretgui\zapretgui.lnk" "$INSTDIR\zapretgui.exe" "" "$INSTDIR\zapretgui.exe"
-  SetOutPath "${CORE}"
   ExecWait '"${CORE}\zapretgui.exe" --setup shortcut "$SMPROGRAMS\zapretgui\zapretgui.lnk"'
   WriteRegStr HKLM "${KEY}" "DisplayName" "zapretgui"
   WriteRegStr HKLM "${KEY}" "DisplayVersion" "${VER}"
@@ -128,7 +126,6 @@ Section Uninstall
   ${EndIf}
   Delete "${CORE}\zapretgui.exe"
   Delete "${CORE}\zapretgui-tray.exe"
-  Delete "${CORE}\update-worker-*.exe"
   Delete "${CORE}\Uninstall.exe"
   RMDir "${CORE}"
   DeleteRegKey HKLM "${KEY}"
