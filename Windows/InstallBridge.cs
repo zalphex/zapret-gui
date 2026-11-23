@@ -104,50 +104,9 @@ internal static class NativeSetup
         return String.Equals(first, second, StringComparison.OrdinalIgnoreCase);
     }
 
-    private static void Migrate()
+    private static void UpdateStartupPath()
     {
         string legacy = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "FlowPanel");
-        string marker = Path.Combine(Paths.Root, ".flowpanel-migrated");
-        if (Directory.Exists(legacy) && !File.Exists(marker))
-        {
-            foreach (string name in new[]
-            {
-                "Zapret",
-                "TG",
-                "state.json"
-            }
-
-            )
-            {
-                string old = Path.Combine(legacy, name), target = Path.Combine(Paths.Root, name);
-                if (File.Exists(target) || Directory.Exists(target))
-                    continue;
-                string temporary = target + "." + Guid.NewGuid().ToString("N") + ".migration";
-                try
-                {
-                    if (Directory.Exists(old))
-                    {
-                        Disk.CopyTree(old, temporary);
-                        Directory.Move(temporary, target);
-                    }
-                    else if (File.Exists(old))
-                    {
-                        File.Copy(old, temporary);
-                        File.Move(temporary, target);
-                    }
-                }
-                finally
-                {
-                    if (Directory.Exists(temporary))
-                        Directory.Delete(temporary, true);
-                    if (File.Exists(temporary))
-                        File.Delete(temporary);
-                }
-            }
-
-            File.WriteAllText(marker, "");
-        }
-
         dynamic service = ScheduledTasks();
         dynamic folder = service.GetFolder("\\");
         RemoveSplitStartup(folder);
@@ -161,7 +120,7 @@ internal static class NativeSetup
                 continue;
             dynamic action = definition.Actions.Item(1);
             bool splitTray = Same((string)action.Path, TrayPath) && (int)definition.Principal.RunLevel == 0;
-            if (!splitTray && !IsLegacyTask(action, legacy))
+            if (!splitTray && !IsLegacyTask(action, legacy) && !Same((string)action.Path, Path.Combine(InstallFolder.OldDesktop, TrayExecutable)) && !Same((string)action.Path, Path.Combine(InstallFolder.OldDesktop, Launcher)))
                 continue;
             definition.Principal.RunLevel = 1;
             bool enabled = task.Enabled;
@@ -173,8 +132,6 @@ internal static class NativeSetup
             folder.RegisterTaskDefinition(name, definition, CreateOrUpdate, definition.Principal.UserId, null, InteractiveToken, null);
         }
 
-        Processes.Stop(Path.Combine(legacy, @"Zapret\bin\winws.exe"));
-        Processes.Stop(Path.Combine(legacy, @"TG\TgWsProxy_windows.exe"));
     }
 
     private static void RemoveSplitStartup(dynamic folder)
@@ -188,34 +145,10 @@ internal static class NativeSetup
             dynamic actions = task.Definition.Actions;
             if ((int)actions.Count != 1) continue;
             dynamic action = actions.Item(1);
-            if ((int)action.Type == 0 && Same((string)action.Path, Path.Combine(Paths.Desktop, Launcher)) &&
+            if ((int)action.Type == 0 && (Same((string)action.Path, Path.Combine(Paths.Desktop, Launcher)) || Same((string)action.Path, Path.Combine(InstallFolder.OldDesktop, Launcher))) &&
                 (string)action.Arguments == "--scheduled-zap") names.Add(name);
         }
         foreach (string name in names) folder.DeleteTask(name, 0);
-    }
-
-    internal static void RestoreProxySettings()
-    {
-        string userRoot = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "zapretgui");
-        string oldExe = Path.Combine(userRoot, "TG", Path.GetFileName(Paths.TgExe));
-        Processes.Stop(oldExe);
-        string oldConfig = Path.Combine(Path.GetDirectoryName(oldExe), "TgWsProxy_data", "config.json");
-        string marker = Path.Combine(Paths.Root, ".proxy-settings-restored");
-        if (File.Exists(marker) || !File.Exists(oldConfig)) return;
-        if (new FileInfo(oldConfig).Length > 128 * 1024) throw new InvalidDataException("Конфиг прокси слишком большой.");
-        var config = Disk.ReadJson(oldConfig);
-        ProxySettings.Validate(config);
-        var existing = Disk.ReadJson(Paths.Config);
-        existing["host"] = "127.0.0.1";
-        existing["port"] = int.Parse(Disk.Get(config, "port"));
-        existing["secret"] = Disk.Get(config, "secret");
-        foreach (string key in new[] { "cfproxy", "h2" })
-        {
-            object value;
-            if (config.TryGetValue(key, out value) && value is bool) existing[key] = value;
-        }
-        Disk.Json(Paths.Config, existing);
-        Disk.Write(marker, new byte[0]);
     }
 
     private static void Uninstall()
@@ -331,8 +264,11 @@ internal static class NativeSetup
     {
         switch (args[1])
         {
-            case "migrate":
-                Migrate();
+            case "prepare":
+                InstallFolder.Prepare(args[2]);
+                break;
+            case "startup-path":
+                UpdateStartupPath();
                 break;
             case "shortcut":
                 ZapretTaskbarIdentity.SetShortcut(args[2]);

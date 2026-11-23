@@ -157,9 +157,6 @@ internal sealed class Session
     {
         await Run("Запуск компонентов", token =>
         {
-            try { NativeSetup.RestoreProxySettings(); }
-            catch (Exception ex) { Log("Перенос настроек прокси · " + ex.GetBaseException().Message); }
-
             foreach (var c in Components.All)
             {
                 if (!Components.Installed(c) || Processes.Running(Paths.Binary(c)))

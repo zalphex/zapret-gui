@@ -14,8 +14,8 @@ using W = System.Windows;
 [assembly: AssemblyTitle("zapretgui")]
 [assembly: AssemblyProduct("zapretgui")]
 [assembly: AssemblyCompany("zalphex")]
-[assembly: AssemblyVersion("2.1.2.0")]
-[assembly: AssemblyFileVersion("2.1.2.0")]
+[assembly: AssemblyVersion("2.1.5.0")]
+[assembly: AssemblyFileVersion("2.1.5.0")]
 internal static class Program
 {
     internal const string MutexId = @"Local\FlowPanel.Flowseal.Manager", OpenId = @"Local\zapretgui.OpenStartupTray";
@@ -27,6 +27,13 @@ internal static class Program
             ServicePointManager.SecurityProtocol = SecurityProtocolType.Tls12;
             bool setup = args.Length >= 2 && args[0] == "--setup";
             bool scheduled = Path.GetFileNameWithoutExtension(F.Application.ExecutablePath).Equals("zapretgui-tray", StringComparison.OrdinalIgnoreCase);
+            // An updater from 2.1.2 reopens the old Program Files launcher once.
+            string installed = InstallFolder.Previous;
+            if (!setup && installed != null && !Processes.Same(installed, Paths.Root))
+            {
+                using (Process.Start(Path.Combine(installed, scheduled ? "zapretgui-tray.exe" : "zapretgui.exe"))) { }
+                return 0;
+            }
             using (var user = WindowsIdentity.GetCurrent())
             {
                 if (!new WindowsPrincipal(user).IsInRole(WindowsBuiltInRole.Administrator))
