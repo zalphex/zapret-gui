@@ -1,6 +1,6 @@
-# zapretgui 2.1.5
+# zapretgui 2.0.0
 
-Панель на C# для zapret и TG WS Proxy от Flowseal. Windows 10 или 11 x64 на Intel/AMD, .NET Framework 4.8 или 4.8.1. При запуске панели Windows запрашивает права администратора, как в версии 2.0.0.
+Панель на C# для zapret и TG WS Proxy от Flowseal. Windows 10 или 11 x64 на Intel/AMD, .NET Framework 4.8 или 4.8.1.
 
 ## Установка
 
