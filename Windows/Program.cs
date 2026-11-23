@@ -14,8 +14,8 @@ using W = System.Windows;
 [assembly: AssemblyTitle("zapretgui")]
 [assembly: AssemblyProduct("zapretgui")]
 [assembly: AssemblyCompany("zalphex")]
-[assembly: AssemblyVersion("2.1.0.0")]
-[assembly: AssemblyFileVersion("2.1.0.0")]
+[assembly: AssemblyVersion("2.1.1.0")]
+[assembly: AssemblyFileVersion("2.1.1.0")]
 internal static class Program
 {
     internal const string MutexId = @"Local\FlowPanel.Flowseal.Manager", OpenId = @"Local\zapretgui.OpenStartupTray";
@@ -39,9 +39,7 @@ internal static class Program
                 .Equals("zapretgui-tray", StringComparison.OrdinalIgnoreCase);
             if (elevated)
             {
-                if (args.Length == 1 && args[0] == "--desktop-user")
-                    throw new IOException("Открой zapretgui из обычного сеанса Windows.");
-                UserSession.OpenFromExplorer(scheduled);
+                DesktopLaunch.Open(scheduled);
                 return 0;
             }
 

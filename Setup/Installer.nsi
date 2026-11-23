@@ -1,13 +1,13 @@
 Unicode True
 RequestExecutionLevel admin
 Name "zapretgui"
-!define VER "2.1.0"
+!define VER "2.1.1"
 !define KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\ZapretGUI"
 !define CORE "$PROGRAMFILES64\zapretgui\Desktop"
-OutFile "..\bin\zapretgui-2.1.0-setup-x64.exe"
+OutFile "..\bin\zapretgui-2.1.1-setup-x64.exe"
 InstallDir "${CORE}"
 SetCompressor /SOLID lzma
-VIProductVersion "2.1.0.0"
+VIProductVersion "2.1.1.0"
 VIAddVersionKey /LANG=1049 "ProductName" "zapretgui"
 VIAddVersionKey /LANG=1049 "FileDescription" "Установщик zapretgui"
 VIAddVersionKey /LANG=1049 "FileVersion" "${VER}"

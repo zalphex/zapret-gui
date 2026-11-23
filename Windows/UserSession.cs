@@ -20,20 +20,6 @@ internal static class UserSession
         finally { if (Directory.Exists(stage)) Directory.Delete(stage, true); }
     }
 
-    internal static void OpenFromExplorer(bool tray)
-    {
-        // Ask the desktop shell (running under the interactive user's token).
-        dynamic shell = Activator.CreateInstance(Type.GetTypeFromProgID("Shell.Application", true));
-        dynamic windows = shell.Windows();
-        object location = null, root = null;
-        int window;
-        dynamic desktop = windows.FindWindowSW(ref location, ref root, 8, out window, 1);
-        if (desktop == null || window == 0)
-            throw new IOException("Открой zapretgui через меню «Пуск» без запуска от администратора.");
-        desktop.Document.Application.ShellExecute(Path.Combine(Paths.Desktop, tray ? "zapretgui-tray.exe" : "zapretgui.exe"),
-            "--desktop-user", Paths.Desktop, "open", 1);
-    }
-
     internal static void QueueUpdate()
     {
         Directory.CreateDirectory(Paths.UserRoot);

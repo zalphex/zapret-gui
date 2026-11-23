@@ -9,7 +9,7 @@ using Microsoft.Win32;
 
 internal static class Paths
 {
-    internal const string Version = "2.1.0";
+    internal const string Version = "2.1.1";
 #if ISOLATED_TESTS
     internal static readonly string Root = Path.Combine(Path.GetTempPath(), "zapretgui-tests-" + Guid.NewGuid().ToString("N"));
 #else
